@@ -4,237 +4,85 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Каталог</title>
+  <!-- Подключение Vue.js -->
   <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
-  <style>
-    body {
-      margin: 0; font-family: 'Inter', sans-serif;
-      background: #121212; color: #eaeaea;
-    }
-    header {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 15px 20px; background: #161616;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-      position: sticky; top: 0; z-index: 100;
-    }
-    .logo { font-size: 24px; font-weight: bold; color: #1db954; }
-    .menu { display: flex; align-items: center; gap: 15px; }
-    .cart-icon { font-size: 24px; cursor: pointer; }
-
-    .products {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 20px; padding: 20px;
-    }
-    .product {
-      background: #232323; border-radius: 10px; padding: 15px;
-      text-align: center; transition: 0.3s; cursor: default;
-    }
-    .product:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6);
-    }
-    .product img {
-      width: 180px; height: 180px; object-fit: cover;
-      border-radius: 10px; margin-bottom: 10px; cursor: pointer;
-    }
-    .product h3 {
-      margin: 10px 0 5px; font-size: 16px; color: #eaeaea; cursor: pointer;
-    }
-    .product .price-text {
-      color: #1db954; font-size: 16px; cursor: pointer; margin-bottom: 10px; display: block;
-    }
-
-    /* Блок +/- (по умолчанию скрыт) */
-    .card-qty-block {
-      display: flex; align-items: center; gap: 8px; margin: 10px 0;
-      justify-content: center;
-    }
-    .card-qty-btn {
-      background: #1db954; border: none; color: #fff;
-      width: 32px; height: 32px; cursor: pointer; border-radius: 4px; font-size: 18px;
-    }
-    .card-qty-btn:hover { background: #17a44b; }
-    .card-qty-input {
-      width: 40px; text-align: center; background: #2c2c2c;
-      border: none; color: #fff; border-radius: 4px;
-    }
-    .add-to-cart-btn {
-      background: #1db954; border: none; color: #fff;
-      padding: 8px 12px; border-radius: 4px; font-weight: 600; cursor: pointer;
-    }
-    .add-to-cart-btn:hover { background: #17a44b; }
-
-    .pagination {
-      text-align: center; margin: 0 0 20px; user-select: none;
-    }
-    .pagination button {
-      background: #1db954; border: none; color: #fff;
-      padding: 8px 12px; margin: 0 3px; border-radius: 4px; cursor: pointer;
-    }
-    .pagination button:hover { background: #17a44b; }
-    .pagination .active {
-      background: #fff; color: #1db954; font-weight: 600;
-    }
-
-    .cart-overlay {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.5); z-index: 1999;
-    }
-    .cart-panel {
-      position: fixed; top: 0; right: 0; width: 300px; height: 100vh;
-      background: #232323; box-shadow: -2px 0 6px rgba(0,0,0,0.5);
-      transform: translateX(100%); transition: transform 0.4s; z-index: 2000; display: flex; flex-direction: column;
-    }
-    .cart-panel.open { transform: translateX(0); }
-    .cart-toolbar {
-      display: flex; align-items: center; background: #161616;
-      padding: 10px; border-bottom: 1px solid #444;
-    }
-    .cart-toolbar h2 { font-size: 16px; font-weight: 600; flex: 1; margin: 0; }
-    .cart-close-btn {
-      background: none; border: none; cursor: pointer; font-size: 20px; color: #eaeaea;
-    }
-    .cart-content {
-      flex: 1; overflow-y: auto; padding: 10px;
-    }
-    .cart-content ul { list-style: none; margin: 0; padding: 0; }
-    .cart-content li {
-      margin-bottom: 10px; display: flex; align-items: center;
-      justify-content: space-between; flex-wrap: wrap;
-    }
-    .cart-item-info { display: flex; flex-direction: column; }
-    .cart-item-name { font-weight: 600; margin-bottom: 4px; }
-    .cart-item-qty { display: flex; align-items: center; gap: 5px; }
-    .cart-item-qty button {
-      background: #1db954; border: none; color: #fff; border-radius: 4px;
-      width: 25px; height: 25px; font-size: 14px; cursor: pointer;
-    }
-    .cart-item-qty button:hover { background: #17a44b; }
-    .cart-item-delete {
-      background: none; border: none; color: #ff4444;
-      cursor: pointer; font-size: 18px; margin-left: 10px;
-    }
-    .cart-item-delete:hover { color: #ff8888; }
-    .cart-total { margin: 10px 0; font-weight: 600; display: flex; justify-content: space-between; }
-    .checkout-btn {
-      width: 100%; padding: 10px 15px; background: #ff4444;
-      border: none; color: #fff; border-radius: 4px; cursor: pointer; font-weight: 600;
-    }
-    .checkout-btn:hover { background: #ff2222; }
-
-    .modal-backdrop {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background-color: rgba(0, 0, 0, 0.4); z-index: 9999;
-      display: flex; justify-content: center; align-items: center;
-    }
-    .modal-dialog {
-      background: #1e1e1e; border-radius: 10px; padding: 15px;
-      display: flex; flex-direction: column; align-items: center; max-width: 90%;
-    }
-    .close-btn {
-      align-self: flex-end; background: none; border: none;
-      color: #fff; font-size: 20px; cursor: pointer; margin-bottom: 5px;
-    }
-    .modal-img {
-      max-width: 300px; max-height: 300px; border-radius: 8px;
-      margin-bottom: 10px; object-fit: cover; cursor: pointer;
-    }
-    .modal-title { font-size: 16px; font-weight: 600; margin: 0 0 5px; text-align: center; }
-    .modal-price { margin-bottom: 10px; color: #1db954; font-weight: 600; }
-    .qty-block { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-    .qty-btn {
-      background: #1db954; border: none; color: #fff;
-      width: 32px; height: 32px; cursor: pointer; border-radius: 4px; font-size: 18px;
-    }
-    .qty-btn:hover { background: #17a44b; }
-    .qty-input {
-      width: 40px; text-align: center; background: #2c2c2c;
-      border: none; color: #fff; border-radius: 4px;
-    }
-    .modal-actions {
-      display: flex; gap: 10px; width: 100%;
-    }
-    .ok-btn, .cancel-btn {
-      flex: 1; padding: 8px 0; border: none; border-radius: 4px;
-      font-weight: 600; cursor: pointer;
-    }
-    .ok-btn {
-      background: #1db954; color: #fff;
-    }
-    .ok-btn:hover { background: #17a44b; }
-    .cancel-btn {
-      background: #bb2c2c; color: #fff;
-    }
-    .cancel-btn:hover { background: #d22c2c; }
-
-    .zoom-backdrop {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background-color: rgba(0, 0, 0, 0.8); z-index: 10000;
-      display: flex; justify-content: center; align-items: center; cursor: zoom-out;
-    }
-    .zoomed-image {
-      max-width: 90vw; max-height: 90vh; object-fit: contain;
-      border-radius: 8px; cursor: default;
-    }
-  </style>
+  <!-- Подключение Swiper.js -->
+  <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css" />
+  <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
+  <!-- Подключение CSS -->
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 <div id="app">
   <header>
-    <div class="logo">Каталог</div>
+    <div class="logo">MRCLUB</div>
     <div class="menu">
+      <!-- Переключатель языка с флагами -->
+      <button @click="toggleLanguage" class="language-btn">
+        <img :src="lang === 'ru'
+            ? 'https://upload.wikimedia.org/wikipedia/en/thumb/f/f3/Flag_of_Russia.svg/24px-Flag_of_Russia.svg.png'
+            : 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Flag_of_Uzbekistan.svg/24px-Flag_of_Uzbekistan.svg.png'" 
+             alt="Flag" class="flag-icon">
+        {{ lang === 'ru' ? 'Русский' : "O'zbek" }}
+      </button>
       <div class="cart-icon" @click="toggleCartPanel">🛒</div>
     </div>
   </header>
 
-  <div v-if="cartPanelOpen" class="cart-overlay" @click="toggleCartPanel"></div>
+  <!-- Уведомление -->
+  <div v-if="notification.message" :class="['notification', { hide: notification.hide }]" @click="hideNotification">
+    {{ notification.message }}
+  </div>
 
-  <div class="products">
-    <div class="product" v-for="product in paginatedProducts" :key="product.id">
-      <img :src="product.main_image_url_full || 'https://via.placeholder.com/150'"
-           :alt="product.name" @click="openModal(product)">
-      <h3 @click="openModal(product)">{{ product.name }}</h3>
-      <span class="price-text" @click="openModal(product)">
-        {{ product.price }} UZS
-      </span>
-
-      <!-- Кнопка "Добавить" -->
-      <button class="add-to-cart-btn" @click.stop="showQtyBlock(product)">Добавить</button>
-
-      <!-- Блок ввода количества (появляется только после нажатия "Добавить") -->
-      <div class="card-qty-block" v-if="product.showQty">
-        <button class="card-qty-btn" @click.stop="decCardQty(product)">-</button>
-        <input type="number" v-model.number="product.cardQty" class="card-qty-input" min="1" />
-        <button class="card-qty-btn" @click.stop="incCardQty(product)">+</button>
-        <!-- Нажатие на иконку «добавить в корзину» -->
-        <button class="card-qty-btn" @click.stop="quickAddToCart(product)">✔</button>
+  <!-- Блок категорий -->
+  <div class="categories-container" v-if="filteredCategories.length">
+    <div class="categories">
+      <div class="category" :class="{ active: selectedCategory === category }" 
+           v-for="(category, index) in filteredCategories" :key="index" 
+           @click="selectCategory(category)">
+        {{ category }}
       </div>
     </div>
   </div>
 
-  <!-- Пагинация -->
-  <div class="pagination" v-if="totalPages > 1">
-    <button @click="prevPage" :disabled="currentPage === 1">«</button>
-    <button v-for="(page, index) in visiblePages" :key="index"
-      :class="{ active: currentPage === page }"
-      :disabled="page === '...'"
-      @click="goToPage(page)">
-      {{ page }}
-    </button>
-    <button @click="nextPage" :disabled="currentPage === totalPages">»</button>
+  <div v-if="cartPanelOpen" class="cart-overlay" @click="toggleCartPanel"></div>
+
+  <!-- Список товаров -->
+  <div class="products">
+    <div class="product" v-for="product in products" :key="product.id">
+      <img :src="product.main_image_url_full || 'https://via.placeholder.com/150'" 
+           :alt="product.name" @click="openModal(product)">
+      <h3 @click="openModal(product)">{{ product.name }}</h3>
+      <span class="price-text" @click="openModal(product)">{{ product.price }} UZS</span>
+      <span class="available-qty" v-if="getAvailableQty(product) !== undefined">
+        {{ translatedTexts.available }}: {{ getAvailableQty(product) }}
+      </span>
+      <button class="add-to-cart-btn" @click="showQtyBlock(product)">
+        {{ translatedTexts.add_to_cart }}
+      </button>
+      <!-- Блок выбора количества -->
+      <div class="card-qty-block" v-if="product.showQty">
+        <button class="card-qty-btn" @click.stop="decCardQty(product)">-</button>
+        <input type="number" v-model.number="product.cardQty" class="card-qty-input" min="1" 
+               :max="getAvailableQty(product)"/>
+        <button class="card-qty-btn" @click.stop="incCardQty(product)">+</button>
+        <button class="confirm-btn" @click.stop="quickAddToCart(product)">✔</button>
+      </div>
+    </div>
   </div>
 
   <!-- Корзина -->
   <div class="cart-panel" :class="{ open: cartPanelOpen }">
     <div class="cart-toolbar">
-      <h2>Моя корзина</h2>
+      <h2>{{ translatedTexts.my_cart }}</h2>
       <button class="cart-close-btn" @click="toggleCartPanel">❌</button>
     </div>
     <div class="cart-content">
       <ul>
-        <li v-if="cartContent.length === 0">Корзина пуста.</li>
-        <li v-for="item in cartContent" :key="item.id">
+        <li v-if="cartContent.length === 0">{{ translatedTexts.cart_empty }}</li>
+        <li v-for="(item, index) in cartContent" :key="item.id">
           <div class="cart-item-info">
-            <span class="cart-item-name">{{ item.name }}</span>
+            <span class="cart-item-name">{{ index + 1 }}. {{ item.name }}</span>
             <div class="cart-item-qty">
               <button @click="cartDecrement(item)">-</button>
               <span>{{ item.quantity }}</span>
@@ -242,113 +90,168 @@
             </div>
           </div>
           <div>
-            {{ item.price * item.quantity }} UZS
+            💰 {{ item.price * item.quantity }} UZS
             <button class="cart-item-delete" @click="removeFromCart(item)">×</button>
           </div>
         </li>
       </ul>
+
       <div class="cart-total" v-if="cartContent.length > 0">
-        <span>Итого:</span><span>{{ cartTotal }} UZS</span>
+        <span>{{ translatedTexts.total }}: </span>
+        <span>{{ cartTotal }} UZS</span>
       </div>
-      <button class="checkout-btn" v-if="cartContent.length > 0" @click="checkout">
-        Оформить заказ
-      </button>
+
+      <!-- Кнопка полной очистки корзины -->
+      <div v-if="cartContent.length > 0" class="clear-cart-container">
+        <button class="clear-cart-btn" @click="clearCart">Очистить корзину</button>
+      </div>
+
+      <!-- Две отдельные кнопки для выбора оплаты -->
+      <div v-if="cartContent.length > 0" class="payment-buttons">
+        <button class="payment-btn click-btn" @click="checkoutClick">
+          Оплатить с помощью CLICK
+        </button>
+        <button class="payment-btn payme-btn" @click="checkoutPayme">
+          Оплатить с помощью PAYME
+        </button>
+      </div>
     </div>
   </div>
 
-  <!-- Модалка -->
+  <!-- Модальное окно с деталями товара -->
   <div v-if="showModal" class="modal-backdrop" @click.self="closeModal">
     <div class="modal-dialog">
       <button class="close-btn" @click="closeModal">×</button>
-      <img v-if="selectedProduct"
-           :src="selectedProduct.main_image_url_full || 'https://via.placeholder.com/150'"
-           class="modal-img" @click="openZoom(selectedProduct.main_image_url_full)">
+      <div class="swiper-container" v-if="selectedProduct && selectedProduct.photos.length">
+        <div class="swiper-wrapper">
+          <div class="swiper-slide" v-for="(photo, index) in selectedProduct.photos" :key="index">
+            <img :src="photo" :alt="selectedProduct.name" @click="openZoom(photo)">
+          </div>
+        </div>
+        <div class="swiper-button-prev"></div>
+        <div class="swiper-button-next"></div>
+        <div class="swiper-pagination"></div>
+      </div>
+      <div v-else-if="selectedProduct">
+        <img :src="selectedProduct.main_image_url_full || 'https://via.placeholder.com/150'" 
+             class="modal-img" @click="openZoom(selectedProduct.main_image_url_full)">
+      </div>
       <h3 class="modal-title" v-if="selectedProduct">{{ selectedProduct.name }}</h3>
       <div class="modal-price" v-if="selectedProduct">{{ selectedProduct.price }} UZS</div>
+      <span class="available-qty" v-if="selectedProduct">
+        {{ translatedTexts.available }}: {{ getAvailableQty(selectedProduct) }}
+      </span>
       <div class="qty-block">
         <button class="qty-btn" @click="decQty">-</button>
-        <input type="number" :value="quantity" class="qty-input" readonly>
+        <input type="number" :value="quantity" class="qty-input" readonly :max="getAvailableQty(selectedProduct)"/>
         <button class="qty-btn" @click="incQty">+</button>
       </div>
       <div class="modal-actions">
-        <button class="ok-btn" @click="addToCart">OK</button>
-        <button class="cancel-btn" @click="closeModal">Отмена</button>
+        <button class="ok-btn" @click="addToCart">{{ translatedTexts.ok }}</button>
+        <button class="cancel-btn" @click="closeModal">{{ translatedTexts.cancel }}</button>
       </div>
     </div>
   </div>
 
-  <!-- Зум картинки -->
+  <!-- Окно зума изображения -->
   <div v-if="imgZoom" class="zoom-backdrop" @click.self="closeZoom">
-    <img :src="imgZoom" class="zoomed-image" />
+    <div class="zoomed-image-container">
+      <button class="zoom-close-btn" @click="closeZoom">×</button>
+      <img :src="imgZoom" class="zoomed-image"/>
+    </div>
   </div>
+
+  <!-- Плавающий значок Telegram -->
+  <a href="https://t.me/markrydenclub_admin" class="telegram-float" target="_blank" aria-label="Связаться с администратором в Telegram">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/8/82/Telegram_logo.svg" alt="Telegram"/>
+  </a>
 </div>
 
+<!-- Скрипт Vue.js -->
 <script>
 new Vue({
   el: '#app',
   data() {
     return {
       products: [],
-      currentPage: 1,
-      itemsPerPage: 6,
       cartPanelOpen: false,
       cartContent: [],
       showModal: false,
       selectedProduct: null,
       quantity: 1,
-      imgZoom: null
+      imgZoom: null,
+      categories: [],
+      selectedCategory: 'Все',
+      swiper: null,
+      notification: {
+        message: '',
+        hide: false
+      },
+      lang: 'ru',
+      chatId: '', // из URL ?chat_id=xxx
+      phoneNumber: '',
+      clientName: '', // имя клиента, сохраняется один раз
+      translatedTexts: {
+        add_to_cart: 'Добавить товар',
+        ok: 'OK',
+        cancel: 'Отмена',
+        available: 'Доступно',
+        my_cart: '🛒 Ваша корзина',
+        cart_empty: 'Корзина пуста 😔',
+        total: '💰 Итого',
+        checkout: 'Оформить заказ',
+        added_to_cart: '✅ Товар {{name}} добавлен в корзину.',
+        order_success: '🎉 Ваш заказ оплачен!',
+        order_canceled: '❌ Заказ отменен.',
+        order_created: '📦 Заказ №{{merchant_trans_id}}\n💰 Сумма: {{amount}} UZS\n🔗 Оплатите по ссылке:\n{{url}}',
+        order_error: '❌ Ошибка: {{error}}',
+        payment_request: 'Пожалуйста, оплатите заказ по ссылке:',
+        orders_unavailable: 'У вас пока нет заказов.',
+        switch_language: 'Сменить язык'
+      }
     };
   },
   computed: {
-    totalPages() {
-      return Math.ceil(this.products.length / this.itemsPerPage);
-    },
-    paginatedProducts() {
-      const start = (this.currentPage - 1) * this.itemsPerPage;
-      return this.products.slice(start, start + this.itemsPerPage);
-    },
-    // Сокращённый список страниц (если >5, показываем 1,2,3,...,последняя)
-    visiblePages() {
-      if (this.totalPages <= 5) {
-        return [...Array(this.totalPages)].map((_, i) => i + 1);
-      } else {
-        return [1, 2, 3, '...', this.totalPages];
-      }
-    },
     cartTotal() {
       return this.cartContent.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    },
+    filteredCategories() {
+      if (this.lang === 'ru') {
+        return this.categories.filter(cat => cat !== 'Hammasi');
+      } else if (this.lang === 'uz') {
+        return this.categories.filter(cat => cat !== 'Все');
+      }
+      return this.categories;
     }
   },
   methods: {
-    async fetchProducts() {
+    async fetchCategories() {
       try {
-        const resp = await fetch('/api/products');
+        const resp = await fetch('/api/categories');
         if (!resp.ok) throw new Error('Ошибка: ' + resp.status);
-        this.products = await resp.json();
-        this.products.forEach(p => {
-          p.cardQty = 1;    // количество в карточке
-          p.showQty = false; // по умолчанию блок +/- скрыт
-        });
+        this.categories = await resp.json();
       } catch (e) {
         console.error(e);
       }
     },
-    goToPage(page) {
-      if (page !== '...' && page >= 1 && page <= this.totalPages) {
-        this.currentPage = page;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    },
-    prevPage() {
-      if (this.currentPage > 1) {
-        this.currentPage--;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    },
-    nextPage() {
-      if (this.currentPage < this.totalPages) {
-        this.currentPage++;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    async fetchProducts() {
+      try {
+        let url = '/api/products';
+        if (this.selectedCategory && this.selectedCategory !== 'Все' && this.selectedCategory !== 'Hammasi') {
+          url += `?category=${encodeURIComponent(this.selectedCategory)}`;
+        }
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('Ошибка: ' + resp.status);
+        this.products = await resp.json();
+        this.products.forEach(p => {
+          this.$set(p, 'cardQty', 1);
+          this.$set(p, 'showQty', false);
+          if (!p.sku) {
+            this.$set(p, 'sku', p.id);
+          }
+        });
+      } catch (e) {
+        console.error(e);
       }
     },
     toggleCartPanel() {
@@ -358,64 +261,358 @@ new Vue({
       this.selectedProduct = product;
       this.quantity = 1;
       this.showModal = true;
+      this.$nextTick(() => {
+        this.initSwiper();
+      });
     },
     closeModal() {
       this.showModal = false;
       this.selectedProduct = null;
       this.quantity = 1;
+      if (this.swiper) {
+        this.swiper.destroy();
+        this.swiper = null;
+      }
     },
-    decCardQty(product) { if (product.cardQty > 1) product.cardQty--; },
-    incCardQty(product) { product.cardQty++; },
-    // По нажатию на "бля" показать блок ввода количества
+    decCardQty(product) {
+      if (product.cardQty > 1) product.cardQty--;
+    },
+    incCardQty(product) {
+      if (product.cardQty < this.getAvailableQty(product)) product.cardQty++;
+    },
     showQtyBlock(product) {
       product.showQty = true;
     },
     quickAddToCart(product) {
       const qty = product.cardQty || 1;
+      const availableQty = this.getAvailableQty(product);
       const existing = this.cartContent.find(i => i.id === product.id);
-      if (existing) existing.quantity += qty;
-      else this.cartContent.push({ ...product, quantity: qty });
+      let totalQty = qty;
+      if (existing) totalQty += existing.quantity;
+      if (totalQty > availableQty + (existing ? existing.quantity : 0)) {
+        this.showNotification('Недостаточно товара.');
+        return;
+      }
+      if (existing) {
+        existing.quantity += qty;
+      } else {
+        this.cartContent.push({ 
+          ...product, 
+          quantity: qty,
+          sku: product.sku 
+        });
+      }
       this.saveCart();
+      product.showQty = false;
+      this.showNotification(
+        this.translatedTexts.added_to_cart.replace('{{name}}', product.name)
+      );
     },
-    incQty() { this.quantity++; },
-    decQty() { if (this.quantity > 1) this.quantity--; },
-    addToCart() {
-      if (!this.selectedProduct) return;
-      const existing = this.cartContent.find(i => i.id === this.selectedProduct.id);
-      if (existing) existing.quantity += this.quantity;
-      else this.cartContent.push({ ...this.selectedProduct, quantity: this.quantity });
-      this.saveCart();
-      this.closeModal();
+    incQty() {
+      if (this.quantity < this.getAvailableQty(this.selectedProduct)) {
+        this.quantity++;
+      }
     },
-    cartIncrement(item) {
-      item.quantity++; this.saveCart();
+    decQty() {
+      if (this.quantity > 1) {
+        this.quantity--;
+      }
     },
-    cartDecrement(item) {
-      if (item.quantity > 1) item.quantity--;
-      else this.cartContent = this.cartContent.filter(i => i.id !== item.id);
-      this.saveCart();
+    checkoutClick() {
+      this.checkout('click');
+    },
+    checkoutPayme() {
+      this.checkout('payme');
+    },
+    checkout(paymentMethod) {
+      if (this.cartContent.length === 0) {
+        alert(this.translatedTexts.cart_empty);
+        return;
+      }
+      if (window.Telegram && window.Telegram.WebApp) {
+        Telegram.WebApp.ready();
+      }
+      let chat_id = this.chatId || '123456789';
+      let phone_number = this.phoneNumber || '';
+      if (!phone_number) {
+        phone_number = prompt("Введите ваш номер телефона:");
+        if (!phone_number) return;
+      }
+      if (!this.clientName) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const nameParam = urlParams.get('name');
+        if (nameParam) {
+          this.clientName = nameParam;
+          localStorage.setItem('clientName', nameParam);
+        } else if (localStorage.getItem('clientName')) {
+          this.clientName = localStorage.getItem('clientName');
+        } else {
+          const enteredName = prompt("Введите ваше имя:");
+          this.clientName = enteredName ? enteredName : 'Пользователь';
+          localStorage.setItem('clientName', this.clientName);
+        }
+      }
+      const orderData = {
+        chat_id,
+        name: this.clientName,
+        cart: this.cartContent,
+        phone_number,
+        lang: this.lang
+      };
+      let endpoint = (paymentMethod === 'click') ? '/create-click-order' : '/create-payme-order';
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData)
+      })
+        .then(resp => resp.json())
+        .then(data => {
+          if (data.success) {
+            if (data.paymentUrl || data.clickLink || data.paymeLink) {
+              window.location.href = data.paymentUrl || data.clickLink || data.paymeLink;
+            } else {
+              alert("Заказ создан. Проверьте Telegram или страницу оплаты.");
+            }
+          } else {
+            alert("Ошибка создания заказа: " + data.error);
+          }
+        })
+        .catch(err => {
+          console.error("Ошибка оформления заказа:", err);
+          alert("Ошибка оформления заказа. Попробуйте позже.");
+        });
     },
     removeFromCart(item) {
-      this.cartContent = this.cartContent.filter(i => i.id !== item.id);
-      this.saveCart();
+      const index = this.cartContent.findIndex(i => i.id === item.id);
+      if (index !== -1) {
+        this.cartContent.splice(index, 1);
+        this.saveCart();
+        this.showNotification(`"${item.name}" удалён из корзины.`);
+      }
     },
-    checkout() {
-      alert(`Заказ оформлен! Сумма: ${this.cartTotal} UZS`);
-      // Очистка корзины, если нужно:
-      // this.cartContent = [];
-      // this.saveCart();
-      // this.cartPanelOpen = false;
+    clearCart() {
+      if (confirm("Вы действительно хотите очистить корзину?")) {
+        this.cartContent = [];
+        this.saveCart();
+        this.showNotification("Корзина очищена.");
+      }
     },
-    openZoom(url) { this.imgZoom = url; },
-    closeZoom() { this.imgZoom = null; },
-    saveCart() { localStorage.setItem('cartContent', JSON.stringify(this.cartContent)); }
+    saveCart() {
+      localStorage.setItem('cartContent', JSON.stringify(this.cartContent));
+      if (this.chatId) {
+        fetch('/save-cart', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: this.chatId, cart: this.cartContent })
+        })
+        .then(resp => resp.json())
+        .then(data => {
+          if (!data.success) {
+            console.error("Ошибка сохранения корзины:", data.error);
+          }
+        })
+        .catch(err => console.error("Ошибка сохранения корзины:", err));
+      }
+    },
+    selectCategory(category) {
+      this.selectedCategory = category;
+      this.fetchProducts();
+    },
+    initSwiper() {
+      if (this.swiper) return;
+      this.swiper = new Swiper('.swiper-container', {
+        loop: false,
+        navigation: {
+          nextEl: '.swiper-button-next',
+          prevEl: '.swiper-button-prev'
+        },
+        pagination: {
+          el: '.swiper-pagination',
+          clickable: true,
+          type: 'bullets'
+        }
+      });
+    },
+    showNotification(message) {
+      this.notification.message = message;
+      this.notification.hide = false;
+      setTimeout(() => {
+        this.notification.hide = true;
+        setTimeout(() => {
+          this.notification.message = '';
+        }, 500);
+      }, 3000);
+    },
+    hideNotification() {
+      this.notification.hide = true;
+      setTimeout(() => {
+        this.notification.message = '';
+      }, 500);
+    },
+    getAvailableQty(product) {
+      const cartItem = this.cartContent.find(i => i.id === product.id);
+      return product.qty - (cartItem ? cartItem.quantity : 0);
+    },
+    setLanguage(lang) {
+      this.lang = lang;
+      this.translatedTexts = (lang === 'ru') ? {
+        add_to_cart: 'Добавить товар',
+        ok: 'OK',
+        cancel: 'Отмена',
+        available: 'Доступно',
+        my_cart: '🛒 Ваша корзина',
+        cart_empty: 'Корзина пуста 😔',
+        total: '💰 Итого',
+        checkout: 'Оформить заказ',
+        added_to_cart: '✅ Товар {{name}} добавлен в корзину.',
+        order_success: '🎉 Ваш заказ оплачен!',
+        order_canceled: '❌ Заказ отменен.',
+        order_created: '📦 Заказ №{{merchant_trans_id}}\n💰 Сумма: {{amount}} UZS\n🔗 Оплатите по ссылке:\n{{url}}',
+        order_error: '❌ Ошибка: {{error}}',
+        payment_request: 'Пожалуйста, оплатите заказ по ссылке:',
+        orders_unavailable: 'У вас пока нет заказов.',
+        switch_language: 'Сменить язык'
+      } : {
+        add_to_cart: "Qo'shish",
+        ok: 'OK',
+        cancel: 'Bekor qilish',
+        available: 'Mavjud',
+        my_cart: '🛒 Mening savatim',
+        cart_empty: "Savat bo'sh.",
+        total: '💰 Jami',
+        checkout: 'Buyurtma berish',
+        added_to_cart: "✅ Mahsulot {{name}} savatga qo'shildi.",
+        order_success: "🎉 Buyurtmangiz to'landi!",
+        order_canceled: "❌ Buyurtma bekor qilindi.",
+        order_created: "📦 Buyurtma №{{merchant_trans_id}}\n💰 Jami: {{amount}} UZS\n🔗 Iltimos, to'lang:\n{{url}}",
+        order_error: '❌ Xato: {{error}}',
+        payment_request: "Iltimos, quyidagi havola orqali to'lang:",
+        orders_unavailable: "Buyurtmalar yo'q.",
+        switch_language: "Tilni o'zgartirish"
+      };
+    },
+    toggleLanguage() {
+      const newLang = (this.lang === 'ru') ? 'uz' : 'ru';
+      this.setLanguage(newLang);
+      this.fetchCategories();
+      this.fetchProducts();
+    }
   },
   mounted() {
+    if (window.Telegram && window.Telegram.WebApp) {
+      Telegram.WebApp.ready();
+    }
+    const urlParams = new URLSearchParams(window.location.search);
+    const langParam = urlParams.get('lang') || 'ru';
+    const chatId = urlParams.get('chat_id') || '';
+    const nameParam = urlParams.get('name') || '';
+    if (chatId) {
+      this.chatId = chatId;
+    }
+    if (nameParam) {
+      this.clientName = nameParam;
+      localStorage.setItem('clientName', nameParam);
+    } else if (localStorage.getItem('clientName')) {
+      this.clientName = localStorage.getItem('clientName');
+    }
+    if (urlParams.get('phone')) {
+      this.phoneNumber = urlParams.get('phone');
+    }
+    this.setLanguage(langParam);
+    this.fetchCategories();
     this.fetchProducts();
     const saved = localStorage.getItem('cartContent');
-    if (saved) this.cartContent = JSON.parse(saved);
+    if (saved) {
+      this.cartContent = JSON.parse(saved);
+      this.cartContent.forEach(item => {
+        if (item.quantity > item.qty) {
+          item.quantity = item.qty;
+        }
+      });
+      this.saveCart();
+    }
   }
 });
+</script>
+
+<!-- Скрипт перетаскивания Telegram кнопки -->
+<script>
+(function() {
+  const telegramFloat = document.querySelector('.telegram-float');
+  let isDragging = false, hasMoved = false, startX, startY, initialX, initialY;
+  const threshold = 5;
+  const savedPosition = JSON.parse(localStorage.getItem('telegramFloatPosition'));
+  if (savedPosition) {
+    telegramFloat.style.left = `${savedPosition.left}px`;
+    telegramFloat.style.top = `${savedPosition.top}px`;
+    telegramFloat.style.bottom = 'auto';
+    telegramFloat.style.right = 'auto';
+  }
+  telegramFloat.addEventListener('touchstart', dragStart, { passive: true });
+  telegramFloat.addEventListener('mousedown', dragStart);
+  function dragStart(e) {
+    if (e.type === 'touchstart') {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    } else {
+      startX = e.clientX;
+      startY = e.clientY;
+      document.addEventListener('mousemove', dragMove);
+      document.addEventListener('mouseup', dragEnd);
+    }
+    const rect = telegramFloat.getBoundingClientRect();
+    initialX = rect.left;
+    initialY = rect.top;
+    hasMoved = false;
+  }
+  function dragMove(e) {
+    let currentX, currentY;
+    if (e.type === 'touchmove') {
+      currentX = e.touches[0].clientX;
+      currentY = e.touches[0].clientY;
+    } else {
+      currentX = e.clientX;
+      currentY = e.clientY;
+    }
+    const dx = currentX - startX;
+    const dy = currentY - startY;
+    if (!hasMoved && Math.sqrt(dx * dx + dy * dy) > threshold) {
+      hasMoved = true;
+      isDragging = true;
+      e.preventDefault();
+    }
+    if (isDragging) {
+      let newLeft = initialX + dx;
+      let newTop = initialY + dy;
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+      const floatWidth = telegramFloat.offsetWidth;
+      const floatHeight = telegramFloat.offsetHeight;
+      if (newLeft < 0) newLeft = 0;
+      if (newLeft + floatWidth > windowWidth) newLeft = windowWidth - floatWidth;
+      if (newTop < 0) newTop = 0;
+      if (newTop + floatHeight > windowHeight) newTop = windowHeight - floatHeight;
+      telegramFloat.style.left = `${newLeft}px`;
+      telegramFloat.style.top = `${newTop}px`;
+      telegramFloat.style.bottom = 'auto';
+      telegramFloat.style.right = 'auto';
+    }
+  }
+  function dragEnd(e) {
+    if (isDragging) {
+      const rect = telegramFloat.getBoundingClientRect();
+      localStorage.setItem('telegramFloatPosition', JSON.stringify({ left: rect.left, top: rect.top }));
+    }
+    isDragging = false;
+    hasMoved = false;
+    if (e.type !== 'touchend') {
+      document.removeEventListener('mousemove', dragMove);
+      document.removeEventListener('mouseup', dragEnd);
+    }
+  }
+  telegramFloat.addEventListener('touchmove', dragMove, { passive: false });
+  telegramFloat.addEventListener('touchend', dragEnd);
+})();
 </script>
 </body>
 </html>

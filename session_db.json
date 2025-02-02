@@ -1,0 +1,24 @@
+{
+  "sessions": [
+    {
+      "id": "7880940719:7880940719",
+      "data": {
+        "state": "EDIT_NAME",
+        "cart": [],
+        "language": "ru",
+        "name": "Шахзод",
+        "contact": "+998337977887"
+      }
+    },
+    {
+      "id": "61496736:61496736",
+      "data": {
+        "state": "MENU",
+        "cart": [],
+        "language": "ru",
+        "name": "Andrey",
+        "contact": "998903708839"
+      }
+    }
+  ]
+}
