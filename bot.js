@@ -10,6 +10,7 @@ const LocalSession = require('telegraf-session-local')
 const crypto = require('crypto')
 const fs = require('fs')
 const morgan = require('morgan') // Логирование HTTP-запросов
+const cron = require('node-cron') // Пакет для cron‑заданий
 
 dotenv.config() // Загрузить .env
 
@@ -303,7 +304,7 @@ const translations = {
 /*************************************************
  * 3) Telegram-бот: Основное меню и меню "Мои данные"
  *************************************************/
-// Функция для показа главного меню с приветствием
+// Функция для показа главного меню с приветствием (reply keyboard)
 function sendMainMenu(ctx) {
 	const lang = ctx.session.language || 'ru'
 	ctx.session.state = 'MENU'
@@ -311,7 +312,6 @@ function sendMainMenu(ctx) {
 		'{{name}}',
 		ctx.session.name
 	)
-	// Главное меню: все кнопки
 	ctx.reply(
 		welcomeMsg,
 		Markup.keyboard([
@@ -322,14 +322,13 @@ function sendMainMenu(ctx) {
 	)
 }
 
-// Функция для показа меню "Мои данные"
+// Функция для показа меню "Мои данные" (inline keyboard)
 function sendMyData(ctx) {
 	const lang = ctx.session.language || 'ru'
 	ctx.session.state = 'MY_DATA'
 	const dataMsg = translations[lang].my_data_text
 		.replace('{{name}}', ctx.session.name || '—')
 		.replace('{{phone}}', ctx.session.contact || '—')
-	// Инлайн-клавиатура для изменения данных и очистки заказов
 	ctx.reply(
 		dataMsg,
 		Markup.inlineKeyboard([
@@ -341,12 +340,9 @@ function sendMyData(ctx) {
 	)
 }
 
-const botLang = ctx => ctx.session.language || 'ru'
-
 bot.start(async ctx => {
 	console.log(`User ${ctx.from.id} запустил /start`)
 	if (ctx.session.name) {
-		// Если пользователь уже зарегистрирован, показываем главное меню
 		sendMainMenu(ctx)
 	} else {
 		ctx.session.state = 'SELECT_LANGUAGE'
@@ -390,7 +386,6 @@ bot.action('edit_phone', async ctx => {
 	await ctx.reply('Введите новый номер телефона:')
 })
 bot.action('clear_orders', async ctx => {
-	// Вызываем эндпоинт очистки заказов
 	try {
 		const resp = await axios.post(`${process.env.WEBAPP_URL}/clear-orders`, {
 			chat_id: ctx.from.id,
@@ -449,7 +444,7 @@ bot.on('text', async ctx => {
 		}
 	} else if (ctx.session.state === 'MENU') {
 		const msg = ctx.message.text
-		const lang = botLang(ctx)
+		const lang = ctx.session.language || 'ru'
 		if (msg === translations.ru.catalog || msg === translations.uz.catalog) {
 			const webAppUrl = `${process.env.WEBAPP_URL}?lang=${lang}&chat_id=${
 				ctx.from.id
@@ -480,16 +475,16 @@ bot.on('text', async ctx => {
 				} else {
 					await ctx.reply(
 						lang === 'ru'
-							? translations.ru.cart_empty
-							: translations.uz.cart_empty
+							? translations[lang].cart_empty
+							: translations[lang].cart_empty
 					)
 				}
 			} catch (err) {
 				console.error('Ошибка получения корзины:', err)
 				await ctx.reply(
 					lang === 'ru'
-						? translations.ru.cart_empty
-						: translations.uz.cart_empty
+						? translations[lang].cart_empty
+						: translations[lang].cart_empty
 				)
 			}
 		} else if (
@@ -534,15 +529,14 @@ bot.on('text', async ctx => {
 			} else {
 				await ctx.reply(
 					lang === 'ru'
-						? translations.ru.orders_unavailable
-						: translations.uz.orders_unavailable
+						? translations[lang].order_empty
+						: translations[lang].order_empty
 				)
 			}
 		} else if (msg.toLowerCase().includes('мои данные')) {
-			// Если текст содержит "мои данные", вызываем меню "Мои данные"
 			sendMyData(ctx)
 		} else if (msg.startsWith('🔄')) {
-			const newLang = botLang(ctx) === 'ru' ? 'uz' : 'ru'
+			const newLang = lang === 'ru' ? 'uz' : 'ru'
 			ctx.session.language = newLang
 			await ctx.reply(
 				`Язык изменён на ${newLang === 'ru' ? 'Русский' : "O'zbek"}.`
@@ -574,7 +568,7 @@ bot.on('contact', async ctx => {
 })
 
 bot.on('web_app_data', async ctx => {
-	const lang = botLang(ctx)
+	const lang = ctx.session.language || 'ru'
 	try {
 		const d = JSON.parse(ctx.message.web_app_data.data)
 		if (d.action === 'updateCart' && Array.isArray(d.cart)) {
@@ -618,8 +612,8 @@ bot.on('web_app_data', async ctx => {
 		} else {
 			await ctx.reply(
 				lang === 'ru'
-					? translations.ru.invalid_data
-					: translations.uz.invalid_data
+					? translations[lang].invalid_data
+					: translations[lang].invalid_data
 			)
 		}
 	} catch (e) {
@@ -651,8 +645,7 @@ bot.on('message', async ctx => {
  * 4) CLICK-интеграция
  * Метод оплаты через сайт WooCommerce с платежной системой clickuz
  * (без создания инвойса через Click API)
- * При создании заказа используются данные клиента, включая его имя,
- * которое берется из запроса (или ранее сохраненных данных).
+ * Используем данные клиента (имя, телефон) из запроса/сессии.
  *************************************************/
 app.post('/create-click-order', async (req, res) => {
 	console.log('📨 POST /create-click-order, body=', req.body)
@@ -984,6 +977,22 @@ app.post('/clear-orders', (req, res) => {
 		message: `Заказы очищены. Было ${initialCount}, осталось ${finalCount}`,
 	})
 })
+
+/*************************************************
+ * Self-ping: предотвращение простоя на Render.com
+ *************************************************/
+// Если переменная RENDER_EXTERNAL_URL задана, запускаем cron-задачу
+if (process.env.RENDER_EXTERNAL_URL) {
+	cron.schedule('*/10 * * * *', async () => {
+		try {
+			// Посылаем GET-запрос к главной странице вашего приложения
+			await axios.get(process.env.RENDER_EXTERNAL_URL)
+			console.log('Self-ping: приложение активно.')
+		} catch (error) {
+			console.error('Self-ping: ошибка запроса:', error.message)
+		}
+	})
+}
 
 /*************************************************
  * Запуск сервера и Telegram-бота
