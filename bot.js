@@ -1,89 +1,82 @@
 /**************************************************
- * bot.js
+ * bot.js — Объединённый файл с базой данных (databaseapp.db),
+ * Express-сервером и Telegram-ботом
  **************************************************/
+
 const express = require('express')
 const { Telegraf, Markup } = require('telegraf')
 const axios = require('axios')
 const path = require('path')
 const dotenv = require('dotenv')
 const LocalSession = require('telegraf-session-local')
-const crypto = require('crypto')
-const fs = require('fs')
-const morgan = require('morgan') // Логирование HTTP-запросов
-const cron = require('node-cron') // Пакет для cron‑заданий
+const morgan = require('morgan')
+const cron = require('node-cron')
+const sqlite3 = require('sqlite3').verbose()
 
-dotenv.config() // Загрузить .env
+dotenv.config()
 
-// Глобальный объект для хранения имен клиентов (если требуется)
-const clients = {}
-
-// Файл для заказов бота (отдельный от заказов WooCommerce)
-const botOrdersFile = path.join(__dirname, 'bot_orders.json')
-
-// Загружаем заказы бота (если есть)
-let botOrders = {}
-try {
-	if (fs.existsSync(botOrdersFile)) {
-		botOrders = JSON.parse(fs.readFileSync(botOrdersFile, 'utf8'))
-		console.log('Заказы бота загружены из файла')
+// ***********************
+// ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
+// ***********************
+const dbPath = path.join(__dirname, 'databaseapp.db')
+const db = new sqlite3.Database(dbPath, err => {
+	if (err) {
+		console.error('Ошибка подключения к БД:', err.message)
+	} else {
+		console.log('База данных подключена:', dbPath)
 	}
-} catch (err) {
-	console.error('Ошибка загрузки bot_orders:', err)
-}
+})
 
-// Функция сохранения заказов бота
-function saveBotOrders() {
-	try {
-		fs.writeFileSync(botOrdersFile, JSON.stringify(botOrders, null, 2))
-		console.log('Заказы бота сохранены в файл')
-	} catch (err) {
-		console.error('Ошибка сохранения bot_orders:', err)
-	}
-}
+// Создаём таблицы, если их ещё нет
+db.serialize(() => {
+	db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      chat_id TEXT PRIMARY KEY,
+      name TEXT,
+      phone TEXT,
+      language TEXT
+    )
+  `)
+	db.run(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      merchant_trans_id TEXT,
+      chat_id TEXT,
+      totalAmount INTEGER,
+      status TEXT,
+      lang TEXT,
+      cart TEXT,  -- Сохраняем корзину в формате JSON
+      wc_order_id INTEGER,
+      wc_order_key TEXT
+    )
+  `)
+	db.run(`
+    CREATE TABLE IF NOT EXISTS carts (
+      chat_id TEXT PRIMARY KEY,
+      cart TEXT  -- JSON-строка с данными корзины
+    )
+  `)
+})
 
-// Файл для заказов WooCommerce (если требуется)
-const ordersFile = path.join(__dirname, 'orders.json')
-let orders = {}
-try {
-	if (fs.existsSync(ordersFile)) {
-		orders = JSON.parse(fs.readFileSync(ordersFile, 'utf8'))
-		console.log('Заказы загружены из файла')
-	}
-} catch (err) {
-	console.error('Ошибка загрузки orders:', err)
-}
-function saveOrders() {
-	try {
-		fs.writeFileSync(ordersFile, JSON.stringify(orders, null, 2))
-		console.log('Заказы сохранены в файл')
-	} catch (err) {
-		console.error('Ошибка сохранения orders:', err)
-	}
-}
-
-// Папка для сохранения корзин
-const cartsDir = path.join(__dirname, 'carts')
-if (!fs.existsSync(cartsDir)) {
-	fs.mkdirSync(cartsDir)
-	console.log('Папка carts создана')
-}
-
-// Инициализация Express
+// ***********************
+// ИНИЦИАЛИЗАЦИЯ EXPRESS-СЕРВЕРА
+// ***********************
 const app = express()
 const PORT = process.env.PORT || 3000
-
 app.use(morgan('dev'))
 app.use(express.json())
 app.use(express.static(path.join(__dirname, 'public')))
 
-// Инициализация Telegram-бота
+// ***********************
+// ИНИЦИАЛИЗАЦИЯ TELEGRAM-БОТА
+// ***********************
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
 const localSession = new LocalSession({ database: 'session_db.json' })
 bot.use(localSession.middleware())
 
-/*************************************************
- * 1) Billz: JWT, /api/products, /api/categories
- *************************************************/
+// ***********************
+// 1) Интеграция с Billz (получение JWT, товаров, категорий)
+// ***********************
 async function getJwtToken() {
 	try {
 		const resp = await axios.post(
@@ -209,18 +202,16 @@ app.get('/api/categories', async (req, res) => {
 	if (!jwt) return res.status(500).json({ error: 'Billz auth error' })
 	const products = await getAllProducts(jwt)
 	const catSet = new Set()
-	products.forEach(p => {
-		p.categories.forEach(ct => catSet.add(ct.name))
-	})
+	products.forEach(p => p.categories.forEach(ct => catSet.add(ct.name)))
 	let cats = Array.from(catSet).sort()
 	if (!cats.includes('Hammasi')) cats.unshift('Hammasi')
 	if (!cats.includes('Все')) cats.unshift('Все')
 	res.json(cats)
 })
 
-/*************************************************
- * 2) Мультиязычность и дополнительные пункты меню
- *************************************************/
+// ***********************
+// 2) Мультиязычность и меню бота
+// ***********************
 const translations = {
 	ru: {
 		select_language: 'Выберите язык:',
@@ -231,7 +222,7 @@ const translations = {
 			'Спасибо, {{name}}! Ваш номер {{phone}} сохранен. Нажмите "📚 Каталог", чтобы начать.',
 		contact_error: 'Пожалуйста, отправьте свой контакт.',
 		please_enter_name: 'Пожалуйста, введите ваше имя. ✍️',
-		catalog: '📚 Каталог',
+		catalog: '📚 Кaталог',
 		cart: '🛒 Корзина',
 		orders: '📦 Заказы',
 		my_data: '📝 Мои данные',
@@ -301,10 +292,6 @@ const translations = {
 	},
 }
 
-/*************************************************
- * 3) Telegram-бот: Основное меню и меню "Мои данные"
- *************************************************/
-// Функция для показа главного меню с приветствием (reply keyboard)
 function sendMainMenu(ctx) {
 	const lang = ctx.session.language || 'ru'
 	ctx.session.state = 'MENU'
@@ -322,7 +309,6 @@ function sendMainMenu(ctx) {
 	)
 }
 
-// Функция для показа меню "Мои данные" (inline keyboard)
 function sendMyData(ctx) {
 	const lang = ctx.session.language || 'ru'
 	ctx.session.state = 'MY_DATA'
@@ -374,7 +360,6 @@ bot.action(/lang_(ru|uz)/, async ctx => {
 	}
 })
 
-// Обработка inline-кнопок из меню "Мои данные"
 bot.action('edit_name', async ctx => {
 	ctx.session.state = 'EDIT_NAME'
 	await ctx.answerCbQuery()
@@ -386,19 +371,16 @@ bot.action('edit_phone', async ctx => {
 	await ctx.reply('Введите новый номер телефона:')
 })
 bot.action('clear_orders', async ctx => {
-	try {
-		const resp = await axios.post(`${process.env.WEBAPP_URL}/clear-orders`, {
-			chat_id: ctx.from.id,
-		})
-		if (resp.data.success) {
-			await ctx.answerCbQuery('Заказы очищены.')
+	const chat_id = ctx.from.id
+	const query = `DELETE FROM orders WHERE chat_id = ?`
+	db.run(query, [chat_id], function (err) {
+		if (err) {
+			console.error('Ошибка очистки заказов:', err.message)
+			ctx.answerCbQuery('Ошибка очистки заказов.')
 		} else {
-			await ctx.answerCbQuery('Ошибка очистки заказов.')
+			ctx.answerCbQuery('Заказы очищены.')
 		}
-	} catch (e) {
-		console.error('Ошибка при очистке заказов:', e)
-		await ctx.answerCbQuery('Ошибка очистки заказов.')
-	}
+	})
 })
 bot.action('back_to_menu', async ctx => {
 	await ctx.answerCbQuery()
@@ -410,7 +392,6 @@ bot.on('text', async ctx => {
 		const name = ctx.message.text.trim()
 		if (name) {
 			ctx.session.name = name
-			clients[ctx.from.id] = name
 			ctx.session.state = 'AWAIT_CONTACT'
 			await ctx.reply(
 				translations[ctx.session.language].ask_contact.replace(
@@ -445,7 +426,7 @@ bot.on('text', async ctx => {
 	} else if (ctx.session.state === 'MENU') {
 		const msg = ctx.message.text
 		const lang = ctx.session.language || 'ru'
-		if (msg === translations.ru.catalog || msg === translations.uz.catalog) {
+		if (msg === translations[lang].catalog) {
 			const webAppUrl = `${process.env.WEBAPP_URL}?lang=${lang}&chat_id=${
 				ctx.from.id
 			}&phone=${ctx.session.contact || ''}`
@@ -455,7 +436,7 @@ bot.on('text', async ctx => {
 					[Markup.button.webApp(translations[lang].open_catalog, webAppUrl)],
 				])
 			)
-		} else if (msg === translations.ru.cart || msg === translations.uz.cart) {
+		} else if (msg === translations[lang].cart) {
 			try {
 				const resp = await axios.get(`${process.env.WEBAPP_URL}/get-car`, {
 					params: { chat_id: ctx.from.id },
@@ -473,66 +454,55 @@ bot.on('text', async ctx => {
 					})
 					await ctx.replyWithHTML(txt)
 				} else {
-					await ctx.reply(
-						lang === 'ru'
-							? translations[lang].cart_empty
-							: translations[lang].cart_empty
-					)
+					await ctx.reply(translations[lang].cart_empty)
 				}
 			} catch (err) {
 				console.error('Ошибка получения корзины:', err)
-				await ctx.reply(
-					lang === 'ru'
-						? translations[lang].cart_empty
-						: translations[lang].cart_empty
-				)
+				await ctx.reply(translations[lang].cart_empty)
 			}
-		} else if (
-			msg === translations.ru.orders ||
-			msg === translations.uz.orders
-		) {
-			const userOrders = Object.values(botOrders).filter(
-				o => String(o.chat_id) === String(ctx.from.id)
-			)
-			if (userOrders.length > 0) {
-				let txt =
-					lang === 'ru'
-						? '📦 <b>Ваши заказы:</b>\n\n'
-						: '📦 <b>Mening buyurtmalarim:</b>\n\n'
-				userOrders.forEach(ord => {
-					let statusText = ''
-					switch (ord.status) {
-						case 'CREATED':
-							statusText = 'В очереди'
-							break
-						case 'PAID':
-							statusText = 'Оплачен'
-							break
-						case 'CANCELED':
-							statusText = 'Отменён'
-							break
-						default:
-							statusText = ord.status
+		} else if (msg === translations[lang].orders) {
+			const query = `SELECT * FROM orders WHERE chat_id = ?`
+			db.all(query, [ctx.from.id], (err, rows) => {
+				if (err) {
+					console.error('Ошибка получения заказов из БД:', err.message)
+					ctx.reply('Ошибка получения заказов.')
+				} else {
+					if (rows.length > 0) {
+						let txt =
+							lang === 'ru'
+								? '📦 <b>Ваши заказы:</b>\n\n'
+								: '📦 <b>Mening buyurtmalarim:</b>\n\n'
+						rows.forEach(ord => {
+							let statusText = ''
+							switch (ord.status) {
+								case 'CREATED':
+									statusText = 'В очереди'
+									break
+								case 'PAID':
+									statusText = 'Оплачен'
+									break
+								case 'CANCELED':
+									statusText = 'Отменён'
+									break
+								default:
+									statusText = ord.status
+							}
+							txt += `✅ <b>Заказ №${ord.merchant_trans_id}</b>\n💰 Сумма: ${ord.totalAmount} UZS\n📌 Статус: ${statusText}\n🛍️ Товары:\n`
+							const cartItems = JSON.parse(ord.cart)
+							cartItems.forEach((item, idx) => {
+								txt += `   ${idx + 1}. ${item.name} x ${item.quantity} шт. - ${
+									item.price * item.quantity
+								} UZS\n`
+							})
+							txt += `\n-----------------------\n`
+						})
+						const messages = txt.match(/[\s\S]{1,4000}/g)
+						messages.forEach(async m => await ctx.replyWithHTML(m))
+					} else {
+						ctx.reply(translations[lang].order_empty)
 					}
-					txt += `✅ <b>Заказ №${ord.merchant_trans_id}</b>\n💰 Сумма: ${ord.totalAmount} UZS\n📌 Статус: ${statusText}\n🛍️ Товары:\n`
-					ord.cart.forEach((item, idx) => {
-						txt += `   ${idx + 1}. ${item.name} x ${item.quantity} шт. - ${
-							item.price * item.quantity
-						} UZS\n`
-					})
-					txt += `\n-----------------------\n`
-				})
-				const messages = txt.match(/[\s\S]{1,4000}/g)
-				for (const m of messages) {
-					await ctx.replyWithHTML(m)
 				}
-			} else {
-				await ctx.reply(
-					lang === 'ru'
-						? translations[lang].order_empty
-						: translations[lang].order_empty
-				)
-			}
+			})
 		} else if (msg.toLowerCase().includes('мои данные')) {
 			sendMyData(ctx)
 		} else if (msg.startsWith('🔄')) {
@@ -558,9 +528,27 @@ bot.on('contact', async ctx => {
 	if (contact && contact.phone_number) {
 		ctx.session.contact = contact.phone_number
 		ctx.session.state = 'MENU'
-		if (!clients[ctx.from.id] && ctx.session.name) {
-			clients[ctx.from.id] = ctx.session.name
-		}
+		const query = `
+      INSERT INTO users (chat_id, name, phone, language)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(chat_id) DO UPDATE SET
+        name=excluded.name,
+        phone=excluded.phone,
+        language=excluded.language
+    `
+		db.run(
+			query,
+			[
+				ctx.from.id,
+				ctx.session.name,
+				contact.phone_number,
+				ctx.session.language || 'ru',
+			],
+			err => {
+				if (err)
+					console.error('Ошибка сохранения пользователя в БД:', err.message)
+			}
+		)
 		sendMainMenu(ctx)
 	} else {
 		await ctx.reply(translations[ctx.session.language].contact_error)
@@ -641,12 +629,9 @@ bot.on('message', async ctx => {
 	console.log(`Unhandled message from user ${ctx.from.id}:`, ctx.message.text)
 })
 
-/*************************************************
- * 4) CLICK-интеграция
- * Метод оплаты через сайт WooCommerce с платежной системой clickuz
- * (без создания инвойса через Click API)
- * Используем данные клиента (имя, телефон) из запроса/сессии.
- *************************************************/
+// ***********************
+// 3) CLICK-интеграция: создание заказа через WooCommerce
+// ***********************
 app.post('/create-click-order', async (req, res) => {
 	console.log('📨 POST /create-click-order, body=', req.body)
 	const { chat_id, cart, phone_number, lang } = req.body
@@ -722,27 +707,42 @@ app.post('/create-click-order', async (req, res) => {
 		const siteUrl = process.env.WC_SITE_URL || 'https://mrclub.uz'
 		const payUrl = `${siteUrl}/checkout/order-pay/${order_id}/?key=${order_key}&order_pay=${order_id}`
 		const merchant_trans_id = `click_${Date.now()}`
-		botOrders[merchant_trans_id] = {
-			chat_id,
-			cart,
-			totalAmount,
-			wc_order_id: order_id,
-			wc_order_key: order_key,
-			status: 'CREATED', // "В очереди"
-			lang: lang || 'ru',
-			merchant_trans_id,
-		}
-		saveBotOrders()
-		try {
-			const txt = translations[botOrders[merchant_trans_id].lang].order_created
-				.replace('{{merchant_trans_id}}', merchant_trans_id)
-				.replace('{{amount}}', totalAmount)
-				.replace('{{url}}', payUrl)
-			await bot.telegram.sendMessage(chat_id, txt)
-		} catch (e) {
-			console.error('Ошибка Telegram (Click):', e)
-		}
-		return res.json({ success: true, clickLink: payUrl })
+
+		const insertQuery = `
+      INSERT INTO orders (merchant_trans_id, chat_id, totalAmount, status, lang, cart, wc_order_id, wc_order_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+		db.run(
+			insertQuery,
+			[
+				merchant_trans_id,
+				chat_id,
+				totalAmount,
+				'CREATED',
+				lang || 'ru',
+				JSON.stringify(cart),
+				order_id,
+				order_key,
+			],
+			function (err) {
+				if (err) {
+					console.error('Ошибка сохранения заказа в БД:', err.message)
+					return res.status(500).json({
+						success: false,
+						error: 'Ошибка при создании заказа WooCommerce',
+					})
+				} else {
+					const txt = translations[lang || 'ru'].order_created
+						.replace('{{merchant_trans_id}}', merchant_trans_id)
+						.replace('{{amount}}', totalAmount)
+						.replace('{{url}}', payUrl)
+					bot.telegram
+						.sendMessage(chat_id, txt)
+						.catch(e => console.error('Ошибка Telegram (Click):', e))
+					return res.json({ success: true, clickLink: payUrl })
+				}
+			}
+		)
 	} catch (e) {
 		console.error(
 			'[Click] Ошибка WooCommerce (create order):',
@@ -754,9 +754,9 @@ app.post('/create-click-order', async (req, res) => {
 	}
 })
 
-/*************************************************
- * 5) Payme: Пропуск первой страницы (аналогично)
- *************************************************/
+// ***********************
+// 4) Payme-интеграция: создание заказа через WooCommerce
+// ***********************
 async function findWooProductBySku(sku) {
 	console.log('[Payme] findWooProductBySku:', sku)
 	try {
@@ -853,24 +853,39 @@ app.post('/create-payme-order', async (req, res) => {
 		const siteUrl = process.env.WC_SITE_URL || 'https://mrclub.uz'
 		const payUrl = `${siteUrl}/checkout/order-pay/${order_id}/?key=${order_key}&order_pay=${order_id}`
 		const merchant_trans_id = `payme_${Date.now()}`
-		botOrders[merchant_trans_id] = {
-			chat_id,
-			cart,
-			totalAmount,
-			wc_order_id: order_id,
-			wc_order_key: order_key,
-			status: 'CREATED', // "В очереди"
-			lang: lang || 'ru',
-			merchant_trans_id,
-		}
-		saveBotOrders()
-		try {
-			const textMsg = `Заказ №${merchant_trans_id}\nСумма: ${wcTotal} UZS\nОплатить:\n${payUrl}`
-			await bot.telegram.sendMessage(chat_id, textMsg)
-		} catch (e) {
-			console.error('Ошибка Telegram при отправке Payme ссылки:', e)
-		}
-		return res.json({ success: true, paymeLink: payUrl })
+		db.run(
+			`
+      INSERT INTO orders (merchant_trans_id, chat_id, totalAmount, status, lang, cart, wc_order_id, wc_order_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+			[
+				merchant_trans_id,
+				chat_id,
+				totalAmount,
+				'CREATED',
+				lang || 'ru',
+				JSON.stringify(cart),
+				order_id,
+				order_key,
+			],
+			function (err) {
+				if (err) {
+					console.error('Ошибка сохранения заказа Payme в БД:', err.message)
+					return res.status(500).json({
+						success: false,
+						error: 'Ошибка при создании заказа WooCommerce',
+					})
+				} else {
+					const textMsg = `Заказ №${merchant_trans_id}\nСумма: ${wcTotal} UZS\nОплатить:\n${payUrl}`
+					bot.telegram
+						.sendMessage(chat_id, textMsg)
+						.catch(e =>
+							console.error('Ошибка Telegram при отправке Payme ссылки:', e)
+						)
+					return res.json({ success: true, paymeLink: payUrl })
+				}
+			}
+		)
 	} catch (e) {
 		console.error(
 			'[Payme] Ошибка WooCommerce (create order):',
@@ -882,9 +897,9 @@ app.post('/create-payme-order', async (req, res) => {
 	}
 })
 
-/*************************************************
- * ENDPOINT: Сохранение корзины в файл (POST /save-cart)
- *************************************************/
+// ***********************
+// 5) Эндпоинты для работы с корзиной и заказами
+// ***********************
 app.post('/save-cart', (req, res) => {
 	const { chat_id, cart } = req.body
 	if (!chat_id || !cart) {
@@ -892,100 +907,100 @@ app.post('/save-cart', (req, res) => {
 			.status(400)
 			.json({ success: false, error: 'Некорректные данные' })
 	}
-	const filePath = path.join(cartsDir, `cart_${chat_id}.json`)
-	try {
-		fs.writeFileSync(filePath, JSON.stringify(cart, null, 2))
-		return res.json({ success: true })
-	} catch (err) {
-		console.error('Ошибка сохранения корзины:', err)
-		return res.status(500).json({ success: false, error: 'Ошибка сервера' })
-	}
+	const cartJSON = JSON.stringify(cart)
+	const query = `REPLACE INTO carts (chat_id, cart) VALUES (?, ?)`
+	db.run(query, [chat_id, cartJSON], function (err) {
+		if (err) {
+			console.error('Ошибка сохранения корзины в БД:', err.message)
+			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
+		} else {
+			return res.json({ success: true })
+		}
+	})
 })
 
-/*************************************************
- * ENDPOINT: Получение корзины из файла (GET /get-car)
- *************************************************/
 app.get('/get-car', (req, res) => {
 	const chat_id = req.query.chat_id
 	if (!chat_id) {
 		return res.status(400).json({ success: false, error: 'chat_id не указан' })
 	}
-	const filePath = path.join(cartsDir, `cart_${chat_id}.json`)
-	if (fs.existsSync(filePath)) {
-		try {
-			const cartData = fs.readFileSync(filePath, 'utf8')
-			const cart = JSON.parse(cartData)
-			return res.json({ success: true, cart })
-		} catch (err) {
-			console.error('Ошибка чтения корзины:', err)
+	const query = `SELECT cart FROM carts WHERE chat_id = ?`
+	db.get(query, [chat_id], (err, row) => {
+		if (err) {
+			console.error('Ошибка получения корзины из БД:', err.message)
 			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
 		}
-	} else {
-		return res.json({ success: true, cart: [] })
-	}
+		if (row) {
+			try {
+				const cart = JSON.parse(row.cart)
+				return res.json({ success: true, cart })
+			} catch (parseErr) {
+				console.error('Ошибка парсинга корзины:', parseErr.message)
+				return res.status(500).json({ success: false, error: 'Ошибка сервера' })
+			}
+		} else {
+			return res.json({ success: true, cart: [] })
+		}
+	})
 })
 
-/*************************************************
- * ENDPOINT: Получение заказов для пользователя (GET /get-orders)
- *************************************************/
 app.get('/get-orders', (req, res) => {
 	const chat_id = req.query.chat_id
 	if (!chat_id) {
 		return res.status(400).json({ success: false, error: 'chat_id не указан' })
 	}
-	const userOrders = Object.values(botOrders).filter(
-		o => String(o.chat_id) === String(chat_id)
-	)
-	const ordersWithStatus = userOrders.map(o => {
-		let statusText = ''
-		switch (o.status) {
-			case 'CREATED':
-				statusText = 'В очереди'
-				break
-			case 'PAID':
-				statusText = 'Оплачен'
-				break
-			case 'CANCELED':
-				statusText = 'Отменён'
-				break
-			default:
-				statusText = o.status
+	const query = `SELECT * FROM orders WHERE chat_id = ?`
+	db.all(query, [chat_id], (err, rows) => {
+		if (err) {
+			console.error('Ошибка получения заказов из БД:', err.message)
+			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
 		}
-		return { ...o, statusText }
+		const ordersWithStatus = rows.map(o => {
+			let statusText = ''
+			switch (o.status) {
+				case 'CREATED':
+					statusText = 'В очереди'
+					break
+				case 'PAID':
+					statusText = 'Оплачен'
+					break
+				case 'CANCELED':
+					statusText = 'Отменён'
+					break
+				default:
+					statusText = o.status
+			}
+			return { ...o, statusText }
+		})
+		return res.json({ success: true, orders: ordersWithStatus })
 	})
-	return res.json({ success: true, orders: ordersWithStatus })
 })
 
-/*************************************************
- * ENDPOINT: Очистка заказов для пользователя (POST /clear-orders)
- *************************************************/
 app.post('/clear-orders', (req, res) => {
 	const { chat_id } = req.body
 	if (!chat_id) {
 		return res.status(400).json({ success: false, error: 'chat_id не указан' })
 	}
-	const initialCount = Object.keys(botOrders).length
-	botOrders = Object.fromEntries(
-		Object.entries(botOrders).filter(
-			([key, order]) => String(order.chat_id) !== String(chat_id)
-		)
-	)
-	saveBotOrders()
-	const finalCount = Object.keys(botOrders).length
-	return res.json({
-		success: true,
-		message: `Заказы очищены. Было ${initialCount}, осталось ${finalCount}`,
+	const query = `DELETE FROM orders WHERE chat_id = ?`
+	db.run(query, [chat_id], function (err) {
+		if (err) {
+			console.error('Ошибка очистки заказов:', err.message)
+			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
+		} else {
+			return res.json({
+				success: true,
+				message: `Заказы очищены.`,
+			})
+		}
 	})
 })
 
-/*************************************************
- * Self-ping: предотвращение простоя на Render.com
- *************************************************/
-// Если переменная RENDER_EXTERNAL_URL задана, запускаем cron-задачу
+// ***********************
+// Self-ping (для предотвращения простоя, например, на Render.com)
+// ***********************
 if (process.env.RENDER_EXTERNAL_URL) {
 	cron.schedule('*/10 * * * *', async () => {
 		try {
-			// Посылаем GET-запрос к главной странице вашего приложения
 			await axios.get(process.env.RENDER_EXTERNAL_URL)
 			console.log('Self-ping: приложение активно.')
 		} catch (error) {
@@ -994,9 +1009,9 @@ if (process.env.RENDER_EXTERNAL_URL) {
 	})
 }
 
-/*************************************************
- * Запуск сервера и Telegram-бота
- *************************************************/
+// ***********************
+// Запуск сервера и бота
+// ***********************
 app.listen(PORT, () => {
 	console.log(`🚀 Сервер запущен на порту ${PORT}`)
 })
