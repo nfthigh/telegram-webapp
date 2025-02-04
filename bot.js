@@ -344,6 +344,14 @@ bot.start(async ctx => {
 })
 
 bot.action(/lang_(ru|uz)/, async ctx => {
+	try {
+		// Сразу отвечаем на callback-запрос, чтобы Telegram не считал его устаревшим
+		await ctx.answerCbQuery()
+	} catch (error) {
+		console.error('Ошибка при ответе на callback query:', error)
+		// Можно не прекращать выполнение, если ошибка произошла при answerCbQuery
+	}
+
 	const selectedLang = ctx.match[1]
 	if (['ru', 'uz'].includes(selectedLang)) {
 		ctx.session.language = selectedLang
@@ -354,9 +362,9 @@ bot.action(/lang_(ru|uz)/, async ctx => {
 			await ctx.reply(translations[selectedLang].start)
 			await ctx.reply(translations[selectedLang].please_enter_name)
 		}
-		await ctx.answerCbQuery()
 	} else {
-		await ctx.answerCbQuery('Неверный выбор языка.')
+		// Если ошибка при выборе языка, можно дополнительно отправить сообщение пользователю
+		await ctx.reply('Неверный выбор языка.')
 	}
 })
 
