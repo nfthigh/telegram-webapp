@@ -25,7 +25,7 @@
              alt="Flag" class="flag-icon">
         {{ lang === 'ru' ? 'Русский' : "O'zbek" }}
       </button>
-      <div class="cart-icon" @click="toggleCartPanel">🛒 ({{ cart.length }})</div>
+      <div class="cart-icon" @click="toggleCartPanel">🛒</div>
     </div>
   </header>
 
@@ -79,8 +79,8 @@
     </div>
     <div class="cart-content">
       <ul>
-        <li v-if="cart.length === 0">{{ translatedTexts.cart_empty }}</li>
-        <li v-for="(item, index) in cart" :key="item.id">
+        <li v-if="cartContent.length === 0">{{ translatedTexts.cart_empty }}</li>
+        <li v-for="(item, index) in cartContent" :key="item.id">
           <div class="cart-item-info">
             <span class="cart-item-name">{{ index + 1 }}. {{ item.name }}</span>
             <div class="cart-item-qty">
@@ -96,18 +96,18 @@
         </li>
       </ul>
 
-      <div class="cart-total" v-if="cart.length > 0">
+      <div class="cart-total" v-if="cartContent.length > 0">
         <span>{{ translatedTexts.total }}: </span>
         <span>{{ cartTotal }} UZS</span>
       </div>
 
       <!-- Кнопка полной очистки корзины -->
-      <div v-if="cart.length > 0" class="clear-cart-container">
+      <div v-if="cartContent.length > 0" class="clear-cart-container">
         <button class="clear-cart-btn" @click="clearCart">Очистить корзину</button>
       </div>
 
       <!-- Две отдельные кнопки для выбора оплаты -->
-      <div v-if="cart.length > 0" class="payment-buttons">
+      <div v-if="cartContent.length > 0" class="payment-buttons">
         <button class="payment-btn click-btn" @click="checkoutClick">
           Оплатить с помощью CLICK
         </button>
@@ -175,7 +175,7 @@ new Vue({
     return {
       products: [],
       cartPanelOpen: false,
-      cart: [],
+      cartContent: [],
       showModal: false,
       selectedProduct: null,
       quantity: 1,
@@ -188,7 +188,7 @@ new Vue({
         hide: false
       },
       lang: 'ru',
-      chatId: '', // можно передавать через URL ?chat_id=xxx
+      chatId: '', // из URL ?chat_id=xxx
       phoneNumber: '',
       clientName: '', // имя клиента, сохраняется один раз
       translatedTexts: {
@@ -213,7 +213,7 @@ new Vue({
   },
   computed: {
     cartTotal() {
-      return this.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      return this.cartContent.reduce((sum, item) => sum + item.price * item.quantity, 0);
     },
     filteredCategories() {
       if (this.lang === 'ru') {
@@ -286,7 +286,7 @@ new Vue({
     quickAddToCart(product) {
       const qty = product.cardQty || 1;
       const availableQty = this.getAvailableQty(product);
-      const existing = this.cart.find(i => i.id === product.id);
+      const existing = this.cartContent.find(i => i.id === product.id);
       let totalQty = qty;
       if (existing) totalQty += existing.quantity;
       if (totalQty > availableQty + (existing ? existing.quantity : 0)) {
@@ -296,7 +296,7 @@ new Vue({
       if (existing) {
         existing.quantity += qty;
       } else {
-        this.cart.push({ 
+        this.cartContent.push({ 
           ...product, 
           quantity: qty,
           sku: product.sku 
@@ -325,16 +325,19 @@ new Vue({
       this.checkout('payme');
     },
     checkout(paymentMethod) {
-      if (this.cart.length === 0) {
+      if (this.cartContent.length === 0) {
         alert(this.translatedTexts.cart_empty);
         return;
       }
       if (window.Telegram && window.Telegram.WebApp) {
         Telegram.WebApp.ready();
       }
-      let chat_id = this.chatId || prompt("Введите ваш Telegram Chat ID:");
-      let phone_number = this.phoneNumber || prompt("Введите ваш номер телефона:");
-      if (!chat_id || !phone_number) return;
+      let chat_id = this.chatId || '123456789';
+      let phone_number = this.phoneNumber || '';
+      if (!phone_number) {
+        phone_number = prompt("Введите ваш номер телефона:");
+        if (!phone_number) return;
+      }
       if (!this.clientName) {
         const urlParams = new URLSearchParams(window.location.search);
         const nameParam = urlParams.get('name');
@@ -352,7 +355,7 @@ new Vue({
       const orderData = {
         chat_id,
         name: this.clientName,
-        cart: this.cart,
+        cart: this.cartContent,
         phone_number,
         lang: this.lang
       };
@@ -380,27 +383,27 @@ new Vue({
         });
     },
     removeFromCart(item) {
-      const index = this.cart.findIndex(i => i.id === item.id);
+      const index = this.cartContent.findIndex(i => i.id === item.id);
       if (index !== -1) {
-        this.cart.splice(index, 1);
+        this.cartContent.splice(index, 1);
         this.saveCart();
         this.showNotification(`"${item.name}" удалён из корзины.`);
       }
     },
     clearCart() {
       if (confirm("Вы действительно хотите очистить корзину?")) {
-        this.cart = [];
+        this.cartContent = [];
         this.saveCart();
         this.showNotification("Корзина очищена.");
       }
     },
     saveCart() {
-      localStorage.setItem('cart', JSON.stringify(this.cart));
+      localStorage.setItem('cartContent', JSON.stringify(this.cartContent));
       if (this.chatId) {
         fetch('/save-cart', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: this.chatId, cart: this.cart })
+          body: JSON.stringify({ chat_id: this.chatId, cart: this.cartContent })
         })
         .then(resp => resp.json())
         .then(data => {
@@ -409,21 +412,6 @@ new Vue({
           }
         })
         .catch(err => console.error("Ошибка сохранения корзины:", err));
-      }
-    },
-    // Новый метод: загрузка корзины с сервера по chat_id
-    async loadCartFromServer() {
-      if (!this.chatId) return;
-      try {
-        const resp = await fetch(`/get-car?chat_id=${this.chatId}`);
-        const data = await resp.json();
-        if (data.success && data.cart && Array.isArray(data.cart)) {
-          // Объединяем серверную корзину с локальной (если есть)
-          this.cart = data.cart;
-          localStorage.setItem('cart', JSON.stringify(this.cart));
-        }
-      } catch (e) {
-        console.error("Ошибка загрузки корзины с сервера:", e);
       }
     },
     selectCategory(category) {
@@ -462,7 +450,7 @@ new Vue({
       }, 500);
     },
     getAvailableQty(product) {
-      const cartItem = this.cart.find(i => i.id === product.id);
+      const cartItem = this.cartContent.find(i => i.id === product.id);
       return product.qty - (cartItem ? cartItem.quantity : 0);
     },
     setLanguage(lang) {
@@ -533,19 +521,15 @@ new Vue({
     this.setLanguage(langParam);
     this.fetchCategories();
     this.fetchProducts();
-    // Загружаем корзину из localStorage
-    const saved = localStorage.getItem('cart');
+    const saved = localStorage.getItem('cartContent');
     if (saved) {
-      this.cart = JSON.parse(saved);
-      this.cart.forEach(item => {
+      this.cartContent = JSON.parse(saved);
+      this.cartContent.forEach(item => {
         if (item.quantity > item.qty) {
           item.quantity = item.qty;
         }
       });
-    }
-    // Если chatId задан, пробуем загрузить корзину с сервера
-    if (this.chatId) {
-      this.loadCartFromServer();
+      this.saveCart();
     }
   }
 });
