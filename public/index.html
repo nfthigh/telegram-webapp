@@ -296,39 +296,13 @@ new Vue({
       if (existing) {
         existing.quantity += qty;
       } else {
-        // Добавляем товар в локальную корзину
         this.cartContent.push({ 
           ...product, 
           quantity: qty,
           sku: product.sku 
         });
       }
-      // Сохраняем всю корзину
       this.saveCart();
-      // Дополнительно отправляем информацию о добавленном товаре на сервер
-      if (this.chatId) {
-        fetch('/add-to-cart', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: this.chatId,
-            product: {
-              id: product.id,
-              sku: product.sku,
-              name: product.name,
-              quantity: qty,
-              price: product.price
-            }
-          })
-        })
-        .then(resp => resp.json())
-        .then(data => {
-          if (!data.success) {
-            console.error("Ошибка сохранения товара в корзину на сервере:", data.error);
-          }
-        })
-        .catch(err => console.error("Ошибка запроса /add-to-cart:", err));
-      }
       product.showQty = false;
       this.showNotification(
         this.translatedTexts.added_to_cart.replace('{{name}}', product.name)
