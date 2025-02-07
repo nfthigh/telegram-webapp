@@ -45,7 +45,7 @@ const createTables = async () => {
         name TEXT,
         phone TEXT,
         language TEXT,
-        last_activity TIMESTAMP
+        last_activity TIMESTAMP DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tashkent')
       )
     `)
 		await pool.query(`
@@ -59,7 +59,7 @@ const createTables = async () => {
         cart JSONB,
         wc_order_id INTEGER,
         wc_order_key TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tashkent')
       )
     `)
 		await pool.query(`
@@ -90,6 +90,27 @@ app.use(express.static(path.join(__dirname, 'public')))
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
 const localSession = new LocalSession({ database: 'session_db.json' })
 bot.use(localSession.middleware())
+
+// ***********************
+// Middleware для обновления last_activity (не чаще 1 раза в 60 сек)
+// ***********************
+bot.use(async (ctx, next) => {
+	if (ctx.from && ctx.from.id) {
+		const now = Date.now()
+		// Если в сессии нет отметки или с прошлого обновления прошло больше 60 секунд
+		if (!ctx.session.lastActivity || now - ctx.session.lastActivity > 60000) {
+			ctx.session.lastActivity = now // Запоминаем время последнего обновления в сессии
+			// Асинхронное обновление last_activity в базе данных (без ожидания)
+			pool
+				.query(
+					`UPDATE users SET last_activity = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tashkent') WHERE chat_id = $1`,
+					[ctx.from.id]
+				)
+				.catch(err => console.error('Ошибка обновления last_activity:', err))
+		}
+	}
+	return next()
+})
 
 // ***********************
 // 1) Интеграция с Billz (получение JWT, товаров, категорий)
@@ -346,8 +367,26 @@ function sendMyData(ctx) {
 // ***********************
 // Команды и обработка событий Telegram-бота
 // ***********************
+
+// При /start проверяем наличие пользователя в БД, если нет — очищаем сессию
 bot.start(async ctx => {
 	console.log(`User ${ctx.from.id} запустил /start`)
+
+	try {
+		const result = await pool.query(`SELECT * FROM users WHERE chat_id = $1`, [
+			ctx.from.id,
+		])
+		if (result.rowCount === 0) {
+			// Если пользователь удалён из БД, очищаем сессию
+			ctx.session = {}
+			console.log(
+				`Пользователь ${ctx.from.id} не найден в БД. Сессия сброшена.`
+			)
+		}
+	} catch (err) {
+		console.error('Ошибка при проверке пользователя в БД:', err)
+	}
+
 	if (ctx.session.name) {
 		sendMainMenu(ctx)
 	} else {
@@ -553,9 +592,9 @@ bot.on('contact', async ctx => {
 		ctx.session.state = 'MENU'
 		const query = `
       INSERT INTO users (chat_id, name, phone, language, last_activity)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tashkent'))
       ON CONFLICT (chat_id)
-      DO UPDATE SET name = EXCLUDED.name, phone = EXCLUDED.phone, language = EXCLUDED.language, last_activity = CURRENT_TIMESTAMP
+      DO UPDATE SET name = EXCLUDED.name, phone = EXCLUDED.phone, language = EXCLUDED.language, last_activity = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tashkent')
     `
 		try {
 			await pool.query(query, [
