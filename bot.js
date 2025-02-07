@@ -1,6 +1,5 @@
 /**************************************************
- * bot.js — Объединённый файл с базой данных PostgreSQL,
- * Express-сервером и Telegram-ботом
+ * bot.js — Файл с PostgreSQL, Express-сервером и Telegram-ботом
  **************************************************/
 
 const express = require('express')
@@ -11,7 +10,7 @@ const dotenv = require('dotenv')
 const LocalSession = require('telegraf-session-local')
 const morgan = require('morgan')
 const cron = require('node-cron')
-const { Pool } = require('pg') // Работаем только через PostgreSQL
+const { Pool } = require('pg') // Подключаем PostgreSQL
 
 dotenv.config()
 
@@ -76,6 +75,32 @@ const createTables = async () => {
 createTables()
 
 // ***********************
+// Функции для работы с пользователями
+// ***********************
+async function getUser(chatId) {
+	try {
+		const result = await pool.query('SELECT * FROM users WHERE chat_id = $1', [
+			chatId,
+		])
+		return result.rows[0] || null
+	} catch (err) {
+		console.error('Ошибка получения пользователя:', err)
+		return null
+	}
+}
+
+async function updateLastActivity(chatId) {
+	try {
+		await pool.query(
+			'UPDATE users SET last_activity = CURRENT_TIMESTAMP WHERE chat_id = $1',
+			[chatId]
+		)
+	} catch (err) {
+		console.error('Ошибка обновления last_activity:', err)
+	}
+}
+
+// ***********************
 // ИНИЦИАЛИЗАЦИЯ EXPRESS-СЕРВЕРА
 // ***********************
 const app = express()
@@ -90,6 +115,26 @@ app.use(express.static(path.join(__dirname, 'public')))
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN)
 const localSession = new LocalSession({ database: 'session_db.json' })
 bot.use(localSession.middleware())
+
+// ***********************
+// Middleware для проверки регистрации и обновления last_activity
+// ***********************
+bot.use(async (ctx, next) => {
+	if (ctx.from && ctx.from.id) {
+		const user = await getUser(ctx.from.id)
+		if (user) {
+			// Если пользователь найден в базе, синхронизируем с сессией
+			ctx.session.name = user.name
+			ctx.session.contact = user.phone
+			ctx.session.language = user.language
+			await updateLastActivity(ctx.from.id)
+		} else {
+			// Если в базе нет записи, сбрасываем сессию (чтобы пройти регистрацию заново)
+			ctx.session = {}
+		}
+	}
+	return next()
+})
 
 // ***********************
 // 1) Интеграция с Billz (получение JWT, товаров, категорий)
@@ -181,7 +226,7 @@ async function getAllProducts(jwt) {
 						}
 					})
 				all = [...all, ...filtered]
-				console.log(`Billz page=${page}, товаров:${filtered.length}`)
+				console.log(`Billz page=${page}, товаров: ${filtered.length}`)
 				page++
 			} else {
 				console.error('Ошибка Billz get products:', r.status, r.data)
@@ -344,13 +389,33 @@ function sendMyData(ctx) {
 }
 
 // ***********************
-// Команды и обработка событий Telegram-бота
+// Обработка команды /start с проверкой в базе
 // ***********************
 bot.start(async ctx => {
-	console.log(`User ${ctx.from.id} запустил /start`)
-	if (ctx.session.name) {
-		sendMainMenu(ctx)
-	} else {
+	try {
+		const user = await getUser(ctx.from.id)
+		if (user) {
+			// Пользователь найден — синхронизируем с сессией и показываем меню
+			ctx.session.name = user.name
+			ctx.session.contact = user.phone
+			ctx.session.language = user.language
+			sendMainMenu(ctx)
+		} else {
+			// Если данных в базе нет, начинаем регистрацию
+			ctx.session = {}
+			ctx.session.state = 'SELECT_LANGUAGE'
+			ctx.session.cart = []
+			await ctx.reply(
+				translations.ru.select_language,
+				Markup.inlineKeyboard([
+					Markup.button.callback('Русский 🇷🇺', 'lang_ru'),
+					Markup.button.callback("O'zbek 🇺🇿", 'lang_uz'),
+				])
+			)
+		}
+	} catch (err) {
+		console.error('Ошибка при обработке /start:', err)
+		ctx.session = {}
 		ctx.session.state = 'SELECT_LANGUAGE'
 		ctx.session.cart = []
 		await ctx.reply(
