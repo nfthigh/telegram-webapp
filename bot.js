@@ -1,5 +1,5 @@
 /**************************************************
- * bot.js — Объединённый файл с базой данных (PostgreSQL),
+ * bot.js — Объединённый файл с базой данных PostgreSQL,
  * Express-сервером и Telegram-ботом
  **************************************************/
 
@@ -11,7 +11,7 @@ const dotenv = require('dotenv')
 const LocalSession = require('telegraf-session-local')
 const morgan = require('morgan')
 const cron = require('node-cron')
-const { Pool } = require('pg') // Используем модуль pg для PostgreSQL
+const { Pool } = require('pg') // Работаем только через PostgreSQL
 
 dotenv.config()
 
@@ -19,9 +19,7 @@ dotenv.config()
 // ИНИЦИАЛИЗАЦИЯ ПУЛА PostgreSQL
 // ***********************
 const pool = new Pool({
-	connectionString:
-		process.env.DATABASE_URL ||
-		'postgresql://andrey:mnVre53hmiVAQmc8sthPmc0SdRIapwRf@dpg-cuikmbin91rc73bji5u0-a.oregon-postgres.render.com/mcrlub',
+	connectionString: process.env.DATABASE_URL,
 	ssl:
 		process.env.NODE_ENV === 'production'
 			? { rejectUnauthorized: false }
@@ -94,10 +92,8 @@ const localSession = new LocalSession({ database: 'session_db.json' })
 bot.use(localSession.middleware())
 
 // ***********************
-// Остальной код (интеграция с Billz, мультиязычность, меню бота и т.д.)
+// 1) Интеграция с Billz (получение JWT, товаров, категорий)
 // ***********************
-
-// --- Функции для Billz (без изменений) ---
 async function getJwtToken() {
 	try {
 		const resp = await axios.post(
@@ -231,11 +227,10 @@ app.get('/api/categories', async (req, res) => {
 })
 
 // ***********************
-// Мультиязычность и меню бота (без изменений)
+// 2) Мультиязычность и меню бота
 // ***********************
 const translations = {
 	ru: {
-		// ... (ваши переводы)
 		select_language: 'Выберите язык:',
 		start: 'Привет! Как вас зовут? 😊',
 		ask_contact:
@@ -274,7 +269,6 @@ const translations = {
 		back: 'Назад',
 	},
 	uz: {
-		// ... (ваши переводы на узбекский)
 		select_language: 'Tilni tanlang:',
 		start: 'Salom! Ismingiz nima? 😊',
 		ask_contact:
