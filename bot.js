@@ -34,7 +34,7 @@ pool
 	.catch(err => console.error('Ошибка подключения к PostgreSQL:', err))
 
 // ***********************
-// Создание таблиц (если не существуют)
+// Функция создания таблиц
 // ***********************
 const createTables = async () => {
 	try {
@@ -73,7 +73,20 @@ const createTables = async () => {
       )
     `)
 
-		// Новая таблица для сохранения отдельных товаров в корзине
+		// Проверка типа колонки product_id в таблице cart_items
+		const res = await pool.query(`
+      SELECT data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'cart_items' AND column_name = 'product_id'
+    `)
+		if (res.rows.length > 0 && res.rows[0].data_type !== 'text') {
+			console.warn(
+				'Неверный тип product_id в таблице cart_items. Выполняется удаление таблицы...'
+			)
+			await pool.query(`DROP TABLE cart_items`)
+		}
+
+		// Создание таблицы cart_items
 		await pool.query(`
       CREATE TABLE IF NOT EXISTS cart_items (
         id SERIAL PRIMARY KEY,
@@ -383,7 +396,7 @@ function sendMyData(ctx) {
 }
 
 // ***********************
-// Обработка команд Telegram-бота
+// Обработка команд Telegram‑бота
 // ***********************
 bot.start(async ctx => {
 	console.log(`User ${ctx.from.id} запустил /start`)
@@ -700,7 +713,7 @@ bot.on('message', async ctx => {
 // Эндпоинты для работы с заказами и корзиной
 // ***********************
 
-// Эндпоинт сохранения корзины (сохраняем как общий JSON, а также обновляем отдельные записи по каждому товару)
+// Эндпоинт сохранения корзины (общий JSON и по каждому товару в таблице cart_items)
 app.post('/save-cart', async (req, res) => {
 	const { chat_id, cart } = req.body
 	if (!chat_id || !cart) {
@@ -820,12 +833,21 @@ async function findWooProductBySku(sku) {
 	console.log(`[findWooProductBySku] Ищем товар по SKU: ${sku}`)
 	try {
 		const url = `${process.env.WC_API_URL}/products`
+		// Устанавливаем дополнительные заголовки, чтобы запрос выглядел как обычный браузерный
+		const headers = {
+			'User-Agent':
+				'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+			Accept: 'application/json, text/plain, */*',
+			Referer: process.env.WC_SITE_URL, // URL вашего сайта WooCommerce
+			'Accept-Language': 'en-US,en;q=0.9',
+		}
 		const resp = await axios.get(url, {
 			auth: {
 				username: process.env.WC_CONSUMER_KEY,
 				password: process.env.WC_CONSUMER_SECRET,
 			},
 			params: { sku },
+			headers, // Передаём заголовки в запрос
 		})
 		console.log(
 			`[findWooProductBySku] Ответ от WooCommerce для SKU ${sku}:`,
