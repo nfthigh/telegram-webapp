@@ -993,7 +993,7 @@ app.post('/clear-orders', (req, res) => {
 	db.run(query, [chat_id], function (err) {
 		if (err) {
 			console.error('Ошибка очистки заказов:', err.message)
-			return res.status(500).json({ success: false, error: 'Ошибка сервера.' })
+			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
 		} else {
 			return res.json({
 				success: true,
