@@ -1,5 +1,5 @@
 /**************************************************
- * bot.js — Объединённый файл с базой данных (databaseapp.db),
+ * bot.js — Объединённый файл с базой данных (PostgreSQL),
  * Express-сервером и Telegram-ботом
  **************************************************/
 
@@ -11,52 +11,71 @@ const dotenv = require('dotenv')
 const LocalSession = require('telegraf-session-local')
 const morgan = require('morgan')
 const cron = require('node-cron')
-const sqlite3 = require('sqlite3').verbose()
+const { Pool } = require('pg') // Используем модуль pg для PostgreSQL
 
 dotenv.config()
 
 // ***********************
-// ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
+// ИНИЦИАЛИЗАЦИЯ ПУЛА PostgreSQL
 // ***********************
-const dbPath = path.join(__dirname, 'databaseapp.db')
-const db = new sqlite3.Database(dbPath, err => {
-	if (err) {
-		console.error('Ошибка подключения к БД:', err.message)
-	} else {
-		console.log('База данных подключена:', dbPath)
-	}
+const pool = new Pool({
+	connectionString:
+		process.env.DATABASE_URL ||
+		'postgresql://andrey:mnVre53hmiVAQmc8sthPmc0SdRIapwRf@dpg-cuikmbin91rc73bji5u0-a.oregon-postgres.render.com/mcrlub',
+	ssl:
+		process.env.NODE_ENV === 'production'
+			? { rejectUnauthorized: false }
+			: false,
 })
 
-// Создаём таблицы, если их ещё нет
-db.serialize(() => {
-	db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      chat_id TEXT PRIMARY KEY,
-      name TEXT,
-      phone TEXT,
-      language TEXT
-    )
-  `)
-	db.run(`
-    CREATE TABLE IF NOT EXISTS orders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      merchant_trans_id TEXT,
-      chat_id TEXT,
-      totalAmount INTEGER,
-      status TEXT,
-      lang TEXT,
-      cart TEXT,  -- Сохраняем корзину в формате JSON
-      wc_order_id INTEGER,
-      wc_order_key TEXT
-    )
-  `)
-	db.run(`
-    CREATE TABLE IF NOT EXISTS carts (
-      chat_id TEXT PRIMARY KEY,
-      cart TEXT  -- JSON-строка с данными корзины
-    )
-  `)
-})
+pool
+	.connect()
+	.then(client => {
+		console.log('Подключение к PostgreSQL успешно установлено')
+		client.release()
+	})
+	.catch(err => console.error('Ошибка подключения к PostgreSQL:', err))
+
+// ***********************
+// Создание таблиц (если не существуют)
+// ***********************
+const createTables = async () => {
+	try {
+		await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        chat_id TEXT PRIMARY KEY,
+        name TEXT,
+        phone TEXT,
+        language TEXT,
+        last_activity TIMESTAMP
+      )
+    `)
+		await pool.query(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY,
+        merchant_trans_id TEXT,
+        chat_id TEXT,
+        totalAmount INTEGER,
+        status TEXT,
+        lang TEXT,
+        cart JSONB,
+        wc_order_id INTEGER,
+        wc_order_key TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+		await pool.query(`
+      CREATE TABLE IF NOT EXISTS carts (
+        chat_id TEXT PRIMARY KEY,
+        cart JSONB
+      )
+    `)
+		console.log('Таблицы PostgreSQL успешно созданы или уже существуют.')
+	} catch (err) {
+		console.error('Ошибка при создании таблиц:', err)
+	}
+}
+createTables()
 
 // ***********************
 // ИНИЦИАЛИЗАЦИЯ EXPRESS-СЕРВЕРА
@@ -75,8 +94,10 @@ const localSession = new LocalSession({ database: 'session_db.json' })
 bot.use(localSession.middleware())
 
 // ***********************
-// 1) Интеграция с Billz (получение JWT, товаров, категорий)
+// Остальной код (интеграция с Billz, мультиязычность, меню бота и т.д.)
 // ***********************
+
+// --- Функции для Billz (без изменений) ---
 async function getJwtToken() {
 	try {
 		const resp = await axios.post(
@@ -210,10 +231,11 @@ app.get('/api/categories', async (req, res) => {
 })
 
 // ***********************
-// 2) Мультиязычность и меню бота
+// Мультиязычность и меню бота (без изменений)
 // ***********************
 const translations = {
 	ru: {
+		// ... (ваши переводы)
 		select_language: 'Выберите язык:',
 		start: 'Привет! Как вас зовут? 😊',
 		ask_contact:
@@ -252,6 +274,7 @@ const translations = {
 		back: 'Назад',
 	},
 	uz: {
+		// ... (ваши переводы на узбекский)
 		select_language: 'Tilni tanlang:',
 		start: 'Salom! Ismingiz nima? 😊',
 		ask_contact:
@@ -326,6 +349,9 @@ function sendMyData(ctx) {
 	)
 }
 
+// ***********************
+// Команды и обработка событий Telegram-бота
+// ***********************
 bot.start(async ctx => {
 	console.log(`User ${ctx.from.id} запустил /start`)
 	if (ctx.session.name) {
@@ -345,13 +371,10 @@ bot.start(async ctx => {
 
 bot.action(/lang_(ru|uz)/, async ctx => {
 	try {
-		// Сразу отвечаем на callback-запрос, чтобы Telegram не считал его устаревшим
 		await ctx.answerCbQuery()
 	} catch (error) {
 		console.error('Ошибка при ответе на callback query:', error)
-		// Можно не прекращать выполнение, если ошибка произошла при answerCbQuery
 	}
-
 	const selectedLang = ctx.match[1]
 	if (['ru', 'uz'].includes(selectedLang)) {
 		ctx.session.language = selectedLang
@@ -363,7 +386,6 @@ bot.action(/lang_(ru|uz)/, async ctx => {
 			await ctx.reply(translations[selectedLang].please_enter_name)
 		}
 	} else {
-		// Если ошибка при выборе языка, можно дополнительно отправить сообщение пользователю
 		await ctx.reply('Неверный выбор языка.')
 	}
 })
@@ -380,15 +402,14 @@ bot.action('edit_phone', async ctx => {
 })
 bot.action('clear_orders', async ctx => {
 	const chat_id = ctx.from.id
-	const query = `DELETE FROM orders WHERE chat_id = ?`
-	db.run(query, [chat_id], function (err) {
-		if (err) {
-			console.error('Ошибка очистки заказов:', err.message)
-			ctx.answerCbQuery('Ошибка очистки заказов.')
-		} else {
-			ctx.answerCbQuery('Заказы очищены.')
-		}
-	})
+	const query = `DELETE FROM orders WHERE chat_id = $1`
+	try {
+		await pool.query(query, [chat_id])
+		await ctx.answerCbQuery('Заказы очищены.')
+	} catch (err) {
+		console.error('Ошибка очистки заказов:', err)
+		await ctx.answerCbQuery('Ошибка очистки заказов.')
+	}
 })
 bot.action('back_to_menu', async ctx => {
 	await ctx.answerCbQuery()
@@ -469,48 +490,48 @@ bot.on('text', async ctx => {
 				await ctx.reply(translations[lang].cart_empty)
 			}
 		} else if (msg === translations[lang].orders) {
-			const query = `SELECT * FROM orders WHERE chat_id = ?`
-			db.all(query, [ctx.from.id], (err, rows) => {
-				if (err) {
-					console.error('Ошибка получения заказов из БД:', err.message)
-					ctx.reply('Ошибка получения заказов.')
-				} else {
-					if (rows.length > 0) {
-						let txt =
-							lang === 'ru'
-								? '📦 <b>Ваши заказы:</b>\n\n'
-								: '📦 <b>Mening buyurtmalarim:</b>\n\n'
-						rows.forEach(ord => {
-							let statusText = ''
-							switch (ord.status) {
-								case 'CREATED':
-									statusText = 'В очереди'
-									break
-								case 'PAID':
-									statusText = 'Оплачен'
-									break
-								case 'CANCELED':
-									statusText = 'Отменён'
-									break
-								default:
-									statusText = ord.status
-							}
-							txt += `✅ <b>Заказ №${ord.merchant_trans_id}</b>\n💰 Сумма: ${ord.totalAmount} UZS\n📌 Статус: ${statusText}\n🛍️ Товары:\n`
-							const cartItems = JSON.parse(ord.cart)
-							cartItems.forEach((item, idx) => {
-								txt += `   ${idx + 1}. ${item.name} x ${item.quantity} шт. - ${
-									item.price * item.quantity
-								} UZS\n`
-							})
-							txt += `\n-----------------------\n`
+			const query = `SELECT * FROM orders WHERE chat_id = $1`
+			try {
+				const result = await pool.query(query, [ctx.from.id])
+				const rows = result.rows
+				if (rows.length > 0) {
+					let txt =
+						lang === 'ru'
+							? '📦 <b>Ваши заказы:</b>\n\n'
+							: '📦 <b>Mening buyurtmalarim:</b>\n\n'
+					rows.forEach(ord => {
+						let statusText = ''
+						switch (ord.status) {
+							case 'CREATED':
+								statusText = 'В очереди'
+								break
+							case 'PAID':
+								statusText = 'Оплачен'
+								break
+							case 'CANCELED':
+								statusText = 'Отменён'
+								break
+							default:
+								statusText = ord.status
+						}
+						txt += `✅ <b>Заказ №${ord.merchant_trans_id}</b>\n💰 Сумма: ${ord.totalamount} UZS\n📌 Статус: ${statusText}\n🛍️ Товары:\n`
+						const cartItems = ord.cart
+						cartItems.forEach((item, idx) => {
+							txt += `   ${idx + 1}. ${item.name} x ${item.quantity} шт. - ${
+								item.price * item.quantity
+							} UZS\n`
 						})
-						const messages = txt.match(/[\s\S]{1,4000}/g)
-						messages.forEach(async m => await ctx.replyWithHTML(m))
-					} else {
-						ctx.reply(translations[lang].order_empty)
-					}
+						txt += `\n-----------------------\n`
+					})
+					const messages = txt.match(/[\s\S]{1,4000}/g)
+					messages.forEach(async m => await ctx.replyWithHTML(m))
+				} else {
+					ctx.reply(translations[lang].order_empty)
 				}
-			})
+			} catch (err) {
+				console.error('Ошибка получения заказов из БД:', err)
+				ctx.reply('Ошибка получения заказов.')
+			}
 		} else if (msg.toLowerCase().includes('мои данные')) {
 			sendMyData(ctx)
 		} else if (msg.startsWith('🔄')) {
@@ -537,26 +558,21 @@ bot.on('contact', async ctx => {
 		ctx.session.contact = contact.phone_number
 		ctx.session.state = 'MENU'
 		const query = `
-      INSERT INTO users (chat_id, name, phone, language)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(chat_id) DO UPDATE SET
-        name=excluded.name,
-        phone=excluded.phone,
-        language=excluded.language
+      INSERT INTO users (chat_id, name, phone, language, last_activity)
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+      ON CONFLICT (chat_id)
+      DO UPDATE SET name = EXCLUDED.name, phone = EXCLUDED.phone, language = EXCLUDED.language, last_activity = CURRENT_TIMESTAMP
     `
-		db.run(
-			query,
-			[
+		try {
+			await pool.query(query, [
 				ctx.from.id,
 				ctx.session.name,
 				contact.phone_number,
 				ctx.session.language || 'ru',
-			],
-			err => {
-				if (err)
-					console.error('Ошибка сохранения пользователя в БД:', err.message)
-			}
-		)
+			])
+		} catch (err) {
+			console.error('Ошибка сохранения пользователя в БД:', err)
+		}
 		sendMainMenu(ctx)
 	} else {
 		await ctx.reply(translations[ctx.session.language].contact_error)
@@ -606,11 +622,7 @@ bot.on('web_app_data', async ctx => {
 				}
 			}
 		} else {
-			await ctx.reply(
-				lang === 'ru'
-					? translations[lang].invalid_data
-					: translations[lang].invalid_data
-			)
+			await ctx.reply(translations[lang].invalid_data)
 		}
 	} catch (e) {
 		console.error('Ошибка web_app_data:', e)
@@ -638,7 +650,7 @@ bot.on('message', async ctx => {
 })
 
 // ***********************
-// 3) CLICK-интеграция: создание заказа через WooCommerce
+// CLICK-интеграция: создание заказа через WooCommerce
 // ***********************
 app.post('/create-click-order', async (req, res) => {
 	console.log('📨 POST /create-click-order, body=', req.body)
@@ -715,14 +727,12 @@ app.post('/create-click-order', async (req, res) => {
 		const siteUrl = process.env.WC_SITE_URL || 'https://mrclub.uz'
 		const payUrl = `${siteUrl}/checkout/order-pay/${order_id}/?key=${order_key}&order_pay=${order_id}`
 		const merchant_trans_id = `click_${Date.now()}`
-
 		const insertQuery = `
       INSERT INTO orders (merchant_trans_id, chat_id, totalAmount, status, lang, cart, wc_order_id, wc_order_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     `
-		db.run(
-			insertQuery,
-			[
+		try {
+			await pool.query(insertQuery, [
 				merchant_trans_id,
 				chat_id,
 				totalAmount,
@@ -731,26 +741,22 @@ app.post('/create-click-order', async (req, res) => {
 				JSON.stringify(cart),
 				order_id,
 				order_key,
-			],
-			function (err) {
-				if (err) {
-					console.error('Ошибка сохранения заказа в БД:', err.message)
-					return res.status(500).json({
-						success: false,
-						error: 'Ошибка при создании заказа WooCommerce',
-					})
-				} else {
-					const txt = translations[lang || 'ru'].order_created
-						.replace('{{merchant_trans_id}}', merchant_trans_id)
-						.replace('{{amount}}', totalAmount)
-						.replace('{{url}}', payUrl)
-					bot.telegram
-						.sendMessage(chat_id, txt)
-						.catch(e => console.error('Ошибка Telegram (Click):', e))
-					return res.json({ success: true, clickLink: payUrl })
-				}
-			}
-		)
+			])
+			const txt = translations[lang || 'ru'].order_created
+				.replace('{{merchant_trans_id}}', merchant_trans_id)
+				.replace('{{amount}}', totalAmount)
+				.replace('{{url}}', payUrl)
+			bot.telegram
+				.sendMessage(chat_id, txt)
+				.catch(e => console.error('Ошибка Telegram (Click):', e))
+			return res.json({ success: true, clickLink: payUrl })
+		} catch (err) {
+			console.error('Ошибка сохранения заказа в БД:', err)
+			return res.status(500).json({
+				success: false,
+				error: 'Ошибка при создании заказа WooCommerce',
+			})
+		}
 	} catch (e) {
 		console.error(
 			'[Click] Ошибка WooCommerce (create order):',
@@ -763,7 +769,7 @@ app.post('/create-click-order', async (req, res) => {
 })
 
 // ***********************
-// 4) Payme-интеграция: создание заказа через WooCommerce
+// Payme-интеграция: создание заказа через WooCommerce
 // ***********************
 async function findWooProductBySku(sku) {
 	console.log('[Payme] findWooProductBySku:', sku)
@@ -861,12 +867,12 @@ app.post('/create-payme-order', async (req, res) => {
 		const siteUrl = process.env.WC_SITE_URL || 'https://mrclub.uz'
 		const payUrl = `${siteUrl}/checkout/order-pay/${order_id}/?key=${order_key}&order_pay=${order_id}`
 		const merchant_trans_id = `payme_${Date.now()}`
-		db.run(
-			`
+		const insertQuery = `
       INSERT INTO orders (merchant_trans_id, chat_id, totalAmount, status, lang, cart, wc_order_id, wc_order_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-			[
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `
+		try {
+			await pool.query(insertQuery, [
 				merchant_trans_id,
 				chat_id,
 				totalAmount,
@@ -875,25 +881,21 @@ app.post('/create-payme-order', async (req, res) => {
 				JSON.stringify(cart),
 				order_id,
 				order_key,
-			],
-			function (err) {
-				if (err) {
-					console.error('Ошибка сохранения заказа Payme в БД:', err.message)
-					return res.status(500).json({
-						success: false,
-						error: 'Ошибка при создании заказа WooCommerce',
-					})
-				} else {
-					const textMsg = `Заказ №${merchant_trans_id}\nСумма: ${wcTotal} UZS\nОплатить:\n${payUrl}`
-					bot.telegram
-						.sendMessage(chat_id, textMsg)
-						.catch(e =>
-							console.error('Ошибка Telegram при отправке Payme ссылки:', e)
-						)
-					return res.json({ success: true, paymeLink: payUrl })
-				}
-			}
-		)
+			])
+			const textMsg = `Заказ №${merchant_trans_id}\nСумма: ${wcTotal} UZS\nОплатить:\n${payUrl}`
+			bot.telegram
+				.sendMessage(chat_id, textMsg)
+				.catch(e =>
+					console.error('Ошибка Telegram при отправке Payme ссылки:', e)
+				)
+			return res.json({ success: true, paymeLink: payUrl })
+		} catch (err) {
+			console.error('Ошибка сохранения заказа Payme в БД:', err)
+			return res.status(500).json({
+				success: false,
+				error: 'Ошибка при создании заказа WooCommerce',
+			})
+		}
 	} catch (e) {
 		console.error(
 			'[Payme] Ошибка WooCommerce (create order):',
@@ -906,9 +908,9 @@ app.post('/create-payme-order', async (req, res) => {
 })
 
 // ***********************
-// 5) Эндпоинты для работы с корзиной и заказами
+// Эндпоинты для работы с корзиной и заказами
 // ***********************
-app.post('/save-cart', (req, res) => {
+app.post('/save-cart', async (req, res) => {
 	const { chat_id, cart } = req.body
 	if (!chat_id || !cart) {
 		return res
@@ -916,54 +918,47 @@ app.post('/save-cart', (req, res) => {
 			.json({ success: false, error: 'Некорректные данные' })
 	}
 	const cartJSON = JSON.stringify(cart)
-	const query = `REPLACE INTO carts (chat_id, cart) VALUES (?, ?)`
-	db.run(query, [chat_id, cartJSON], function (err) {
-		if (err) {
-			console.error('Ошибка сохранения корзины в БД:', err.message)
-			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
-		} else {
-			return res.json({ success: true })
-		}
-	})
+	const query = `INSERT INTO carts (chat_id, cart)
+                 VALUES ($1, $2)
+                 ON CONFLICT (chat_id) DO UPDATE SET cart = EXCLUDED.cart`
+	try {
+		await pool.query(query, [chat_id, cartJSON])
+		return res.json({ success: true })
+	} catch (err) {
+		console.error('Ошибка сохранения корзины в БД:', err)
+		return res.status(500).json({ success: false, error: 'Ошибка сервера' })
+	}
 })
 
-app.get('/get-car', (req, res) => {
+app.get('/get-car', async (req, res) => {
 	const chat_id = req.query.chat_id
 	if (!chat_id) {
 		return res.status(400).json({ success: false, error: 'chat_id не указан' })
 	}
-	const query = `SELECT cart FROM carts WHERE chat_id = ?`
-	db.get(query, [chat_id], (err, row) => {
-		if (err) {
-			console.error('Ошибка получения корзины из БД:', err.message)
-			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
-		}
-		if (row) {
-			try {
-				const cart = JSON.parse(row.cart)
-				return res.json({ success: true, cart })
-			} catch (parseErr) {
-				console.error('Ошибка парсинга корзины:', parseErr.message)
-				return res.status(500).json({ success: false, error: 'Ошибка сервера' })
-			}
+	const query = `SELECT cart FROM carts WHERE chat_id = $1`
+	try {
+		const result = await pool.query(query, [chat_id])
+		if (result.rows.length) {
+			const row = result.rows[0]
+			return res.json({ success: true, cart: row.cart })
 		} else {
 			return res.json({ success: true, cart: [] })
 		}
-	})
+	} catch (err) {
+		console.error('Ошибка получения корзины из БД:', err)
+		return res.status(500).json({ success: false, error: 'Ошибка сервера' })
+	}
 })
 
-app.get('/get-orders', (req, res) => {
+app.get('/get-orders', async (req, res) => {
 	const chat_id = req.query.chat_id
 	if (!chat_id) {
 		return res.status(400).json({ success: false, error: 'chat_id не указан' })
 	}
-	const query = `SELECT * FROM orders WHERE chat_id = ?`
-	db.all(query, [chat_id], (err, rows) => {
-		if (err) {
-			console.error('Ошибка получения заказов из БД:', err.message)
-			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
-		}
-		const ordersWithStatus = rows.map(o => {
+	const query = `SELECT * FROM orders WHERE chat_id = $1`
+	try {
+		const result = await pool.query(query, [chat_id])
+		const ordersWithStatus = result.rows.map(o => {
 			let statusText = ''
 			switch (o.status) {
 				case 'CREATED':
@@ -981,26 +976,25 @@ app.get('/get-orders', (req, res) => {
 			return { ...o, statusText }
 		})
 		return res.json({ success: true, orders: ordersWithStatus })
-	})
+	} catch (err) {
+		console.error('Ошибка получения заказов из БД:', err)
+		return res.status(500).json({ success: false, error: 'Ошибка сервера' })
+	}
 })
 
-app.post('/clear-orders', (req, res) => {
+app.post('/clear-orders', async (req, res) => {
 	const { chat_id } = req.body
 	if (!chat_id) {
 		return res.status(400).json({ success: false, error: 'chat_id не указан' })
 	}
-	const query = `DELETE FROM orders WHERE chat_id = ?`
-	db.run(query, [chat_id], function (err) {
-		if (err) {
-			console.error('Ошибка очистки заказов:', err.message)
-			return res.status(500).json({ success: false, error: 'Ошибка сервера' })
-		} else {
-			return res.json({
-				success: true,
-				message: `Заказы очищены.`,
-			})
-		}
-	})
+	const query = `DELETE FROM orders WHERE chat_id = $1`
+	try {
+		await pool.query(query, [chat_id])
+		return res.json({ success: true, message: `Заказы очищены.` })
+	} catch (err) {
+		console.error('Ошибка очистки заказов:', err)
+		return res.status(500).json({ success: false, error: 'Ошибка сервера' })
+	}
 })
 
 // ***********************
