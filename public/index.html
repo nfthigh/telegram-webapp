@@ -9,8 +9,63 @@
   <!-- Подключение Swiper.js -->
   <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css" />
   <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
-  <!-- Подключение CSS -->
+  <!-- Подключение Bootstrap 4 и Font Awesome для стильного дизайна -->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
+  <!-- Подключение вашего CSS (если нужен дополнительный стиль) -->
   <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Если нет отдельного файла стилей, можно добавить сюда */
+    body { background-color: #f8f9fa; }
+    header { background-color: #343a40; color: #fff; padding: 10px 20px; }
+    .logo { font-size: 1.5rem; font-weight: bold; }
+    .menu { display: flex; align-items: center; }
+    .language-btn { background: none; border: none; color: #fff; margin-right: 20px; }
+    .flag-icon { margin-right: 5px; }
+    .cart-icon { font-size: 1.5rem; cursor: pointer; }
+    .notification { position: fixed; top: 70px; right: 20px; z-index: 1050; cursor: pointer; }
+    .categories-container { margin: 20px 0; }
+    .categories { display: flex; flex-wrap: wrap; }
+    .category { padding: 5px 10px; background-color: #e9ecef; margin: 5px; border-radius: 4px; cursor: pointer; }
+    .category.active { background-color: #007bff; color: #fff; }
+    .products { display: flex; flex-wrap: wrap; justify-content: center; }
+    .product { background: #fff; border: 1px solid #dee2e6; border-radius: 4px; margin: 10px; padding: 10px; text-align: center; width: 200px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .product img { max-width: 100%; cursor: pointer; }
+    .price-text { font-weight: bold; color: #28a745; }
+    .available-qty { display: block; margin: 5px 0; font-size: 0.9rem; color: #6c757d; }
+    .add-to-cart-btn { margin-top: 5px; }
+    .card-qty-block { display: flex; align-items: center; justify-content: center; margin-top: 5px; }
+    .card-qty-btn { width: 30px; height: 30px; }
+    .card-qty-input { width: 50px; text-align: center; }
+    /* Корзина */
+    .cart-panel { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; background: #fff; border-left: 1px solid #dee2e6; transform: translateX(100%); transition: transform 0.3s ease; z-index: 1100; }
+    .cart-panel.open { transform: translateX(0); }
+    .cart-toolbar { padding: 10px; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center; }
+    .cart-content { padding: 10px; overflow-y: auto; height: calc(100% - 50px); }
+    .cart-item-info { display: flex; justify-content: space-between; }
+    .cart-item-delete { background: none; border: none; color: #dc3545; font-size: 1.2rem; }
+    .clear-cart-container { text-align: center; margin-top: 10px; }
+    .payment-buttons { display: flex; justify-content: space-around; margin-top: 10px; }
+    /* Модальное окно */
+    .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1200; display: flex; justify-content: center; align-items: center; }
+    .modal-dialog { background: #fff; padding: 20px; border-radius: 4px; max-width: 500px; width: 100%; position: relative; }
+    .close-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 1.5rem; }
+    .modal-img { max-width: 100%; cursor: pointer; }
+    .modal-title { margin-top: 15px; }
+    .modal-price { font-size: 1.2rem; color: #28a745; margin-top: 5px; }
+    .qty-block { display: flex; justify-content: center; align-items: center; margin-top: 10px; }
+    .qty-btn { width: 30px; height: 30px; }
+    .qty-input { width: 50px; text-align: center; margin: 0 5px; }
+    .modal-actions { margin-top: 15px; display: flex; justify-content: space-around; }
+    /* Зум */
+    .zoom-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1300; display: flex; justify-content: center; align-items: center; }
+    .zoomed-image-container { position: relative; }
+    .zoom-close-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; font-size: 1.5rem; color: #fff; }
+    .zoomed-image { max-width: 90vw; max-height: 90vh; }
+    /* Telegram floating button */
+    .telegram-float { position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.3); z-index: 1400; cursor: pointer; }
+    .telegram-float img { width: 100%; height: 100%; border-radius: 50%; }
+  </style>
 </head>
 <body>
 <div id="app">
@@ -25,7 +80,9 @@
              alt="Flag" class="flag-icon">
         {{ lang === 'ru' ? 'Русский' : "O'zbek" }}
       </button>
-      <div class="cart-icon" @click="toggleCartPanel">🛒</div>
+      <div class="cart-icon" @click="toggleCartPanel">
+        <i class="fas fa-shopping-cart"></i>
+      </div>
     </div>
   </header>
 
@@ -57,16 +114,16 @@
       <span class="available-qty" v-if="getAvailableQty(product) !== undefined">
         {{ translatedTexts.available }}: {{ getAvailableQty(product) }}
       </span>
-      <button class="add-to-cart-btn" @click="showQtyBlock(product)">
+      <button class="add-to-cart-btn btn btn-sm btn-primary" @click="showQtyBlock(product)">
         {{ translatedTexts.add_to_cart }}
       </button>
       <!-- Блок выбора количества -->
       <div class="card-qty-block" v-if="product.showQty">
-        <button class="card-qty-btn" @click.stop="decCardQty(product)">-</button>
+        <button class="card-qty-btn btn btn-secondary" @click.stop="decCardQty(product)">-</button>
         <input type="number" v-model.number="product.cardQty" class="card-qty-input" min="1" 
                :max="getAvailableQty(product)"/>
-        <button class="card-qty-btn" @click.stop="incCardQty(product)">+</button>
-        <button class="confirm-btn" @click.stop="quickAddToCart(product)">✔</button>
+        <button class="card-qty-btn btn btn-secondary" @click.stop="incCardQty(product)">+</button>
+        <button class="confirm-btn btn btn-success" @click.stop="quickAddToCart(product)">✔</button>
       </div>
     </div>
   </div>
@@ -75,43 +132,43 @@
   <div class="cart-panel" :class="{ open: cartPanelOpen }">
     <div class="cart-toolbar">
       <h2>{{ translatedTexts.my_cart }}</h2>
-      <button class="cart-close-btn" @click="toggleCartPanel">❌</button>
+      <button class="cart-close-btn btn btn-danger" @click="toggleCartPanel">❌</button>
     </div>
     <div class="cart-content">
-      <ul>
-        <li v-if="cartContent.length === 0">{{ translatedTexts.cart_empty }}</li>
-        <li v-for="(item, index) in cartContent" :key="item.id">
-          <div class="cart-item-info">
-            <span class="cart-item-name">{{ index + 1 }}. {{ item.name }}</span>
+      <ul class="list-group">
+        <li v-if="cartContent.length === 0" class="list-group-item">{{ translatedTexts.cart_empty }}</li>
+        <li v-for="(item, index) in cartContent" :key="item.id" class="list-group-item d-flex justify-content-between align-items-center">
+          <div>
+            <strong>{{ index + 1 }}. {{ item.name }}</strong>
             <div class="cart-item-qty">
-              <button @click="cartDecrement(item)">-</button>
-              <span>{{ item.quantity }}</span>
-              <button @click="cartIncrement(item)">+</button>
+              <button class="btn btn-sm btn-secondary" @click="cartDecrement(item)">-</button>
+              <span class="mx-2">{{ item.quantity }}</span>
+              <button class="btn btn-sm btn-secondary" @click="cartIncrement(item)">+</button>
             </div>
           </div>
           <div>
             💰 {{ item.price * item.quantity }} UZS
-            <button class="cart-item-delete" @click="removeFromCart(item)">×</button>
+            <button class="btn btn-sm btn-danger" @click="removeFromCart(item)">×</button>
           </div>
         </li>
       </ul>
 
-      <div class="cart-total" v-if="cartContent.length > 0">
+      <div class="cart-total mt-2" v-if="cartContent.length > 0">
         <span>{{ translatedTexts.total }}: </span>
         <span>{{ cartTotal }} UZS</span>
       </div>
 
       <!-- Кнопка полной очистки корзины -->
-      <div v-if="cartContent.length > 0" class="clear-cart-container">
-        <button class="clear-cart-btn" @click="clearCart">Очистить корзину</button>
+      <div v-if="cartContent.length > 0" class="clear-cart-container mt-2">
+        <button class="clear-cart-btn btn btn-outline-danger" @click="clearCart">Очистить корзину</button>
       </div>
 
-      <!-- Две отдельные кнопки для выбора оплаты -->
-      <div v-if="cartContent.length > 0" class="payment-buttons">
-        <button class="payment-btn click-btn" @click="checkoutClick">
+      <!-- Кнопки оплаты -->
+      <div v-if="cartContent.length > 0" class="payment-buttons mt-3">
+        <button class="payment-btn btn btn-success mr-2" @click="checkoutClick">
           Оплатить с помощью CLICK
         </button>
-        <button class="payment-btn payme-btn" @click="checkoutPayme">
+        <button class="payment-btn btn btn-info" @click="checkoutPayme">
           Оплатить с помощью PAYME
         </button>
       </div>
@@ -121,8 +178,8 @@
   <!-- Модальное окно с деталями товара -->
   <div v-if="showModal" class="modal-backdrop" @click.self="closeModal">
     <div class="modal-dialog">
-      <button class="close-btn" @click="closeModal">×</button>
-      <div class="swiper-container" v-if="selectedProduct && selectedProduct.photos.length">
+      <button class="close-btn btn btn-danger" @click="closeModal">×</button>
+      <div class="swiper-container" v-if="selectedProduct && selectedProduct.photos && selectedProduct.photos.length">
         <div class="swiper-wrapper">
           <div class="swiper-slide" v-for="(photo, index) in selectedProduct.photos" :key="index">
             <img :src="photo" :alt="selectedProduct.name" @click="openZoom(photo)">
@@ -141,14 +198,14 @@
       <span class="available-qty" v-if="selectedProduct">
         {{ translatedTexts.available }}: {{ getAvailableQty(selectedProduct) }}
       </span>
-      <div class="qty-block">
-        <button class="qty-btn" @click="decQty">-</button>
+      <div class="qty-block mt-2">
+        <button class="qty-btn btn btn-secondary" @click="decQty">-</button>
         <input type="number" :value="quantity" class="qty-input" readonly :max="getAvailableQty(selectedProduct)"/>
-        <button class="qty-btn" @click="incQty">+</button>
+        <button class="qty-btn btn btn-secondary" @click="incQty">+</button>
       </div>
-      <div class="modal-actions">
-        <button class="ok-btn" @click="addToCart">{{ translatedTexts.ok }}</button>
-        <button class="cancel-btn" @click="closeModal">{{ translatedTexts.cancel }}</button>
+      <div class="modal-actions mt-3">
+        <button class="ok-btn btn btn-success" @click="addToCart">{{ translatedTexts.ok }}</button>
+        <button class="cancel-btn btn btn-secondary" @click="closeModal">{{ translatedTexts.cancel }}</button>
       </div>
     </div>
   </div>
@@ -156,7 +213,7 @@
   <!-- Окно зума изображения -->
   <div v-if="imgZoom" class="zoom-backdrop" @click.self="closeZoom">
     <div class="zoomed-image-container">
-      <button class="zoom-close-btn" @click="closeZoom">×</button>
+      <button class="zoom-close-btn btn btn-danger" @click="closeZoom">×</button>
       <img :src="imgZoom" class="zoomed-image"/>
     </div>
   </div>
@@ -175,6 +232,7 @@ new Vue({
     return {
       products: [],
       cartPanelOpen: false,
+      // Теперь корзина НЕ загружается из localStorage – данные берутся только с сервера и из сессии (если надо)
       cartContent: [],
       showModal: false,
       selectedProduct: null,
@@ -190,7 +248,7 @@ new Vue({
       lang: 'ru',
       chatId: '', // из URL ?chat_id=xxx
       phoneNumber: '',
-      clientName: '', // имя клиента, сохраняется один раз
+      clientName: '', // имя клиента (сохраняем, если нужно)
       translatedTexts: {
         add_to_cart: 'Добавить товар',
         ok: 'OK',
@@ -359,6 +417,7 @@ new Vue({
         phone_number,
         lang: this.lang
       };
+      console.log('Отправляем заказ:', JSON.stringify(orderData)); // отладка
       let endpoint = (paymentMethod === 'click') ? '/create-click-order' : '/create-payme-order';
       fetch(endpoint, {
         method: 'POST',
@@ -398,7 +457,8 @@ new Vue({
       }
     },
     saveCart() {
-      localStorage.setItem('cartContent', JSON.stringify(this.cartContent));
+      // Убираем сохранение в localStorage для корзины – теперь только отправка на сервер
+      console.log('Сохраняем корзину:', this.cartContent);
       if (this.chatId) {
         fetch('/save-cart', {
           method: 'POST',
@@ -521,16 +581,7 @@ new Vue({
     this.setLanguage(langParam);
     this.fetchCategories();
     this.fetchProducts();
-    const saved = localStorage.getItem('cartContent');
-    if (saved) {
-      this.cartContent = JSON.parse(saved);
-      this.cartContent.forEach(item => {
-        if (item.quantity > item.qty) {
-          item.quantity = item.qty;
-        }
-      });
-      this.saveCart();
-    }
+    // Для корзины больше не загружаем из localStorage – теперь данные управляются через сервер.
   }
 });
 </script>
